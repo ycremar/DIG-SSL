@@ -2,12 +2,12 @@
 ### Code structure
 ```
 ssl
- |- utils
+ |- utils (JT)
  |   |- encoders.py
  |   |- datasets.py
  |
  |- predictive
- |- eval
+ |- eval (JT)
  |   |- unsupervised
  |   |- semi_supervised
  |   |- ...
@@ -17,7 +17,7 @@ ssl
      |— utils
      |     | — …
      | 
-     |— model
+     |— model (YC)
      |     | — __init__.py
      |     | — contrastive.py
      |     | — infograph.py
@@ -25,12 +25,12 @@ ssl
      |     | — multiview.py
      |     | — gcc.py
      | 
-     |— objectives
+     |— objectives 
      |     | — __init__.py
-     |     | — infonce.py
-     |     | — jse.py
+     |     | — infonce.py (YC, done)
+     |     | — jse.py (Zhao)
      | 
-     |— views_fn
+     |— views_fn (Zhao)
            | — __init__.py
            | — feature.py
            | — structure.py
