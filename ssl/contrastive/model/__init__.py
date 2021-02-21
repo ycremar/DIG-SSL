@@ -1,1 +1,1 @@
-from contrastive import Contrastive
+from .contrastive import Contrastive
