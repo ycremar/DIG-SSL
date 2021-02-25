@@ -3,10 +3,11 @@ import numpy as np
 from torch_geometric.utils import to_dense_adj, dense_to_sparse
 
 
-def uniform_sample(ratio=0.1):
+def uniform_sample(ratio=0.1, add_self_loop=True):
     '''
     Args:
         ratio: Percentage of nodes to drop.
+        add_self_loop (bool): Set True if add self-loop in edge_index.
     '''
     def views_fn(data):
         '''
@@ -26,10 +27,16 @@ def uniform_sample(ratio=0.1):
         node_num, _ = data.x.size()
         _, edge_num = data.edge_index.size()
 
+        if add_self_loop:
+            sl = torch.tensor([[n, n] for n in range(node_num)]).t()
+            edge_index = torch.cat((data.edge_index, sl), dim=1)
+        else:
+            edge_index = data.edge_index.detach().clone()
+
         drop_num = int(node_num * ratio)
         idx_drop = np.random.choice(node_num, drop_num, replace=False)
         idx_nondrop = [n for n in range(node_num) if not n in idx_drop]
-        adj = to_dense_adj(data.edge_index)[0]
+        adj = to_dense_adj(edge_index)[0]
         adj[idx_drop, :] = 0
         adj[:, idx_drop] = 0
 
@@ -38,10 +45,11 @@ def uniform_sample(ratio=0.1):
     return views_fn
 
 
-def RW_sample(ratio=0.1):
+def RW_sample(ratio=0.1, add_self_loop=True):
     '''
     Args:
         ratio: Percentage of nodes to sample from the graph.
+        add_self_loop (bool): Set True if add self-loop in edge_index.
     '''
     def views_fn(data):
         '''
@@ -61,7 +69,13 @@ def RW_sample(ratio=0.1):
         node_num, _ = data.x.size()
         sub_num = int(node_num * ratio)
 
-        edge_index = data.edge_index.numpy()
+        if add_self_loop:
+            sl = torch.tensor([[n, n] for n in range(node_num)]).t()
+            edge_index = torch.cat((data.edge_index, sl), dim=1)
+        else:
+            edge_index = data.edge_index.detach().clone()
+
+        edge_index = edge_index.numpy()
         idx_sub = [np.random.randint(node_num, size=1)[0]]
         idx_neigh = set([n for n in edge_index[1][edge_index[0]==idx_sub[0]]])
 

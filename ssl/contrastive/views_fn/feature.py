@@ -3,16 +3,17 @@ import numpy as np
 import random
 
 
-def node_attr_mask(mode='whole', mask_ratio=0.1, mask_mean=0.5, mask_std=0.5):
+def node_attr_mask(mode='whole', mask_ratio=0.1, mask_mean=0.5, mask_std=0.5, add_self_loop=True):
     '''
     Args:
         mode: Masking mode with three options:
-                whole masking: mask all feature dimensions of the selected node with a Gaussian distribution;
-                partial masking: mask only selected feature dimensions with a Gaussian distribution;
-                onehot masking: mask all feature dimensions of the selected node with a one-hot vector.
+                'whole': mask all feature dimensions of the selected node with a Gaussian distribution;
+                'partial': mask only selected feature dimensions with a Gaussian distribution;
+                'onehot': mask all feature dimensions of the selected node with a one-hot vector.
         mask_ratio: Percentage of masking feature dimensions.
         mask_mean: Mean of the Gaussian distribution.
         mask_std: Standard deviation of the distribution. Must be non-negative.
+        add_self_loop (bool): Set True if add self-loop in edge_index.
     '''
     def views_fn(data):
         '''
@@ -29,7 +30,14 @@ def node_attr_mask(mode='whole', mask_ratio=0.1, mask_mean=0.5, mask_std=0.5):
             batch tensor with shape [num_nodes].
         '''
         node_num, feat_dim = data.x.size()
-        x = data.x
+        x = data.x.detach().clone()
+
+        if add_self_loop:
+            sl = torch.tensor([[n, n] for n in range(node_num)]).t()
+            edge_index = torch.cat((data.edge_index, sl), dim=1)
+        else:
+            edge_index = data.edge_index.detach().clone()
+
 
         if mode == 'whole':
             mask_num = int(node_num * mask_ratio)
@@ -50,6 +58,6 @@ def node_attr_mask(mode='whole', mask_ratio=0.1, mask_mean=0.5, mask_std=0.5):
         else:
             raise Exception("Masking mode option '{0:s}' is not available!".format(mode))
 
-        return (x, data.edge_index, data.batch)
+        return (x, edge_index, data.batch)
 
     return views_fn
