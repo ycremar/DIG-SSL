@@ -16,17 +16,17 @@ def JSE_loss(zs, zs_n=None, batch=None, sigma=None):
         assert len(zs_n) == len(zs)
         assert batch is not None
         if len(zs) == 1:
-            return JSE_local_global(zs_n[0], zs[0], batch)
+            return JSE_local_global(zs[0], zs_n[0], batch)
         elif len(zs) == 2:
-            return (JSE_local_global(zs_n[0], zs[1], batch) +
-                    JSE_local_global(zs_n[1], zs[0], batch))
+            return (JSE_local_global(zs[0], zs_n[1], batch) +
+                    JSE_local_global(zs[1], zs_n[0], batch))
         else:
             assert len(zs) == len(sigma)
             loss = 0
             for (i, j) in itertools.combinations(range(len(zs)), 2):
                 if sigma[i][j]:
-                    loss += (JSE_local_global(zs_n[i], zs[j], batch) +
-                             JSE_local_global(zs_n[j], zs[i], batch))
+                    loss += (JSE_local_global(zs[i], zs_n[j], batch) +
+                             JSE_local_global(zs[j], zs_n[i], batch))
             return loss
 
     if len(zs) == 2:
@@ -40,11 +40,11 @@ def JSE_loss(zs, zs_n=None, batch=None, sigma=None):
         return loss
 
 
-def JSE_local_global(z_n, z_g, batch):
+def JSE_local_global(z_g, z_n, batch):
     '''
     Args:
-        z_n: Tensor of shape [n_nodes, z_dim].
         z_g: Tensor of shape [n_graphs, z_dim].
+        z_n: Tensor of shape [n_nodes, z_dim].
         batch: Tensor of shape [n_graphs].
     '''
     num_graphs = z_g.shape[0]
