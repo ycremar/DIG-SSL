@@ -3,12 +3,13 @@ import torch.nn as nn
 from ssl.contrastive.views_fn import *
 from ssl.contrastive.objectives import NCE_loss, JSE_loss
 
-class Contrastive(nn.Module):
+class Contrastive():
     def __init__(self, 
                  objective,
                  views_fn,
                  optimizer,
-                 proj_head = 'MLP',
+                 proj = None,
+                 dim = None,
                  node2graph = False,
                  device = None):
         """
@@ -21,53 +22,93 @@ class Contrastive(nn.Module):
 
         self.loss_fn = self._get_loss(objective)
         self.optimizer = optimizer
-        
-        if proj is not None:
-            self.proj_head = self._get_proj(self.proj_head, z_dim)
-            self.optimizer.add_param_group({"params": self.proj_head})
-        else:
-            self.proj_head = lambda x: x
-        
         self.views_fn = views_fn # fn: graph -> graph
         self.device = device
+        self.proj = proj
+        
         
     def train(self, encoders, data_loader):
         """
         Args:
             encoder: Trainable pytorch model or list of models. Callable with inputs (X, edge_index, batch).
+                    If node2graph is False, return tensor of shape [n_batch, z_dim]. Else, return tuple of
+                    shape ([n_batch, z_dim], [n_batch, z'_dim]) representing graph-level and node-level embeddings.
             dataloader: Dataloader.
         """
         
         if isinstance(encoders, list):
             assert len(encoders)==len(self.views_fn)
-            return self.train_mul_encoders(encoders, data_loader)
-        elif node2graph:
-            pass
         else:
-            return self.train_single_encoder(encoders, data_loader)
+            encoders = [encoders]*len(self.views_fn)
+        
+        if node2graph:
+            return self.train_encoder_node2graph(encoders, data_loader)
+        else:
+            return self.train_encoder(encoders, data_loader)
 
-    def train_single_encoder(self, encoder, data_loader):
+        
+    def train_encoder(self, encoders, data_loader):
         
         data = list(data_loader)[0].to(torch.device(self.device))
-        _, z_dim = encoder(data).size()
+        z_dim = encoders[0](data).shape[1]
+        
+        if self.proj is not None:
+            self.proj_head = self._get_proj(self.proj, z_dim)
+            self.optimizer.add_param_group({"params": self.proj_head})
+        else:
+            self.proj_head = lambda x: x
 
-        encoder.train()
+        [encoder.train() for encoder in encoders]
         self.proj_head.train()
         for data in data_loader:
             self.optimizer.zero_grad()
-            
-            views = [v_fn(data) for v_fn in self.views_fn]
-            zs = [encoder(*view) for view in views]
-            zs = [self.proj_head(z) for z in zs]
+            zs = []
+            for v_fn, encoder in zip(self.views_fn, encoders):
+                view = v_fn(data)
+                z = encoder(view)
+                zs.append(self.proj_head(z))
             
             loss = self.loss_fn(zs)
             loss.backward()
             self.optimizer.step()
 
-        return encoder
+        return encoder, self.proj_head
+
     
-    def train_mul_encoders(self, encoders, data_loader):
-        pass
+    def train_encoder_node2graph(self, encoders, data_loader, sigma):
+        
+        # output of each encoder should be tuple of (node_embed, graph_embed)
+        data = list(data_loader)[0].to(torch.device(self.device))
+        z_n, z_g = encoders[0](data)
+        z_n_dim, z_g_dim = z_n.shape[1], z_g.shape[1]
+        
+        if self.proj is not None:
+            self.proj_head_n = self._get_proj(self.proj, z_n_dim)
+            self.proj_head_g = self._get_proj(self.proj, z_g_dim)
+            self.optimizer.add_param_group([{"params": self.proj_head_n}, 
+                                            {"params": self.proj_head_g}])
+        else:
+            self.proj_head_n = lambda x: x
+            self.proj_head_g = lambda x: x
+
+        [encoder.train() for encoder in encoders]
+        self.proj_head_n.train()
+        self.proj_head_g.train()
+        for data in data_loader:
+            self.optimizer.zero_grad()
+            zs_n, zs_g = [], []
+            for v_fn, encoder in zip(self.views_fn, encoders):            
+                view = v_fn(data)
+                z_n, z_g = encoder(view)
+                zs_n.append(self.proj_head_n(z_n))
+                zs_g.append(self.proj_head_g(z_g))
+            
+            loss = self.loss_fn(zs_g, zs_n=zs_n)
+            loss.backward()
+            self.optimizer.step()
+
+        return encoder, (self.proj_head_n, self.proj_head_g)
+    
     
     def _get_proj(self, proj_head, z_dim):
         
@@ -82,6 +123,7 @@ class Contrastive(nn.Module):
             return nn.Sequential(nn.Linear(z_dim, z_dim),
                                  nn.ReLU(inplace=True),
                                  nn.Linear(z_dim, z_dim))
+        
         
     def _get_loss(self, objective):
         
