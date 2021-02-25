@@ -6,8 +6,9 @@ def NCE_loss(zs, zs_n=None, batch=None, sigma=None, args=None):
     '''
     Args:
         zs: List of tensors of shape [batch_size, z_dim].
-        zs_n: List of tensors of shape [nodes, z_dim].
-        sigma: 2D-array of shape [n_views, n_views] with boolean values.
+        zs_n: [Optional] List of tensors of shape [nodes, z_dim].
+        batch: [Optional] Only required when zs_n is not None.
+        sigma: [Optional] 2D-array of shape [n_views, n_views] with boolean values.
             Only required when n_views > 2. If sigma_ij = True, then compute
             infoNCE between view_i and view_j.
     '''
@@ -22,17 +23,17 @@ def NCE_loss(zs, zs_n=None, batch=None, sigma=None, args=None):
         assert len(zs_n)==len(zs_g)
         assert batch is not None
         if len(zs)==1:
-            return infoNCE_local_global(zs[0], zs_g[0], batch, tau, norm)
+            return infoNCE_local_global(zs[0], zs_n[0], batch, tau, norm)
         elif len(zs)==2:
-            return (infoNCE_local_global(zs[0], zs_g[1], batch, tau, norm)+
-                    infoNCE_local_global(zs[1], zs_g[0], batch, tau, norm))
+            return (infoNCE_local_global(zs[0], zs_n[1], batch, tau, norm)+
+                    infoNCE_local_global(zs[1], zs_n[0], batch, tau, norm))
         else:
             assert len(zs)==len(sigma)
             loss = 0
             for (i, j) in itertools.combinations(range(len(zs)), 2):
                 if sigma[i][j]:
-                    loss += (infoNCE_local_global(zs[i], zs_g[j], batch, tau, norm)+
-                             infoNCE_local_global(zs[j], zs_g[i], batch, tau, norm))
+                    loss += (infoNCE_local_global(zs[i], zs_n[j], batch, tau, norm)+
+                             infoNCE_local_global(zs[j], zs_n[i], batch, tau, norm))
             return loss
     
     if len(zs)==2:
@@ -52,7 +53,6 @@ def infoNCE_local_global(z_n, z_g, batch, tau=0.5, norm=True):
     Args:
         z_n: Tensor of shape [n_nodes, z_dim]
         z_g: Tensor of shape [n_graphs, z_dim]
-        batch: 
         tau: Float. Usually in (0,1].
         norm: Boolean. Whether to apply 
     '''

@@ -10,7 +10,7 @@ class Contrastive():
                  optimizer,
                  proj = None,
                  dim = None,
-                 node2graph = False,
+                 n_g_contrast = False,
                  device = None):
         """
         Args:
@@ -31,8 +31,8 @@ class Contrastive():
         """
         Args:
             encoder: Trainable pytorch model or list of models. Callable with inputs (X, edge_index, batch).
-                    If node2graph is False, return tensor of shape [n_batch, z_dim]. Else, return tuple of
-                    shape ([n_batch, z_dim], [n_batch, z'_dim]) representing graph-level and node-level embeddings.
+                    If n_g_contrast is False, return tensor of shape [n_graphs, z_dim]. Else, return tuple of
+                    shape ([n_graphs, z_dim], [n_nodes, z'_dim]) representing graph-level and node-level embeddings.
             dataloader: Dataloader.
         """
         
@@ -41,8 +41,8 @@ class Contrastive():
         else:
             encoders = [encoders]*len(self.views_fn)
         
-        if node2graph:
-            return self.train_encoder_node2graph(encoders, data_loader)
+        if n_g_contrast:
+            return self.train_encoder_n_g_contrast(encoders, data_loader)
         else:
             return self.train_encoder(encoders, data_loader)
 
@@ -75,7 +75,7 @@ class Contrastive():
         return encoder, self.proj_head
 
     
-    def train_encoder_node2graph(self, encoders, data_loader, sigma):
+    def train_encoder_n_g_contrast(self, encoders, data_loader, sigma):
         
         # output of each encoder should be tuple of (node_embed, graph_embed)
         data = list(data_loader)[0].to(torch.device(self.device))
@@ -99,11 +99,11 @@ class Contrastive():
             zs_n, zs_g = [], []
             for v_fn, encoder in zip(self.views_fn, encoders):            
                 view = v_fn(data)
-                z_n, z_g = encoder(view)
+                z_g, z_n = encoder(view)
                 zs_n.append(self.proj_head_n(z_n))
                 zs_g.append(self.proj_head_g(z_g))
             
-            loss = self.loss_fn(zs_g, zs_n=zs_n)
+            loss = self.loss_fn(zs_g, zs_n=zs_n, batch=data.batch)
             loss.backward()
             self.optimizer.step()
 
