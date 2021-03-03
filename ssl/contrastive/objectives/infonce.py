@@ -56,6 +56,8 @@ def infoNCE_local_global(z_n, z_g, batch, tau=0.5, norm=True):
         tau: Float. Usually in (0,1].
         norm: Boolean. Whether to apply 
     '''
+    # Pending implementation
+    
     loss = None
 
     return loss

@@ -1,14 +1,28 @@
 import torch
 import numpy as np
 from torch_geometric.utils import to_dense_adj, dense_to_sparse
+from torch_geometric.data import Batch, Data
 
-
-def uniform_sample(ratio=0.1, add_self_loop=True):
+def uniform_sample(ratio=0.1):
     '''
     Args:
         ratio: Percentage of nodes to drop.
         add_self_loop (bool): Set True if add self-loop in edge_index.
     '''
+    def do_trans(data):
+        
+        node_num, _ = data.x.size()
+        _, edge_num = data.edge_index.size()
+
+        drop_num = int(node_num * ratio)
+        idx_drop = np.random.choice(node_num, drop_num, replace=False)
+        idx_nondrop = [n for n in range(node_num) if not n in idx_drop]
+        adj = to_dense_adj(edge_index)[0]
+        adj[idx_drop, :] = 0
+        adj[:, idx_drop] = 0
+        
+        return Data(x=data.x[idx_nondrop], edge_index=dense_to_sparse(adj)[0])
+    
     def views_fn(data):
         '''
         Args:
@@ -24,23 +38,11 @@ def uniform_sample(ratio=0.1, add_self_loop=True):
             edge_index tensor with shape [2, num_nondrop_edges];
             batch tensor with shape [num_nondrop_nodes].
         '''
-        node_num, _ = data.x.size()
-        _, edge_num = data.edge_index.size()
-
-        if add_self_loop:
-            sl = torch.tensor([[n, n] for n in range(node_num)]).t()
-            edge_index = torch.cat((data.edge_index, sl), dim=1)
-        else:
-            edge_index = data.edge_index.detach().clone()
-
-        drop_num = int(node_num * ratio)
-        idx_drop = np.random.choice(node_num, drop_num, replace=False)
-        idx_nondrop = [n for n in range(node_num) if not n in idx_drop]
-        adj = to_dense_adj(edge_index)[0]
-        adj[idx_drop, :] = 0
-        adj[:, idx_drop] = 0
-
-        return (data.x[idx_nondrop], dense_to_sparse(adj)[0], data.batch[idx_nondrop])
+        if isinstance(data, Data):
+            return do_trans(data)
+        elif isinstance(data, Batch):
+            dlist = [do_trans(d) for d in data.to_data_list()]
+            return Batch.from_data_list(dlist)
 
     return views_fn
 
