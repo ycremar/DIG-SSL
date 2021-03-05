@@ -6,13 +6,14 @@ from torch_geometric.nn import GINConv, GCNConv, global_add_pool, global_mean_po
 
 class Encoder(torch.nn.Module):
     def __init__(self, input_dim, hidden_dim, n_layers=5,
-                 pool='sum', gnn='gin', node_level=False):
+                 pool='sum', gnn='gin', bn=False, act='relu',
+                 bias=True, xavier=True, node_level=False):
         super(Encoder, self).__init__()
 
         if gnn == 'gin':
-            self.encoder = GIN(input_dim, hidden_dim, n_layers, pool)
+            self.encoder = GIN(input_dim, hidden_dim, n_layers, pool, bn, act)
         elif gnn == 'gcn':
-            self.encoder = GCN(input_dim, hidden_dim, n_layers, pool)
+            self.encoder = GCN(input_dim, hidden_dim, n_layers, pool, bn, act, bias, xavier)
         self.node_level = node_level
 
     def forward(self, x, edge_index, batch):
@@ -25,10 +26,13 @@ class Encoder(torch.nn.Module):
 
 class GIN(torch.nn.Module):
     def __init__(self, input_dim, hidden_dim, n_layers=5,
-                 pool='sum'):
+                 pool='sum', bn=False, act='relu'):
         super(GIN, self).__init__()
 
-        self.bns = torch.nn.ModuleList()
+        if bn:
+            self.bns = torch.nn.ModuleList()
+        else:
+            self.bns = None
         self.convs = torch.nn.ModuleList()
         self.n_layers = n_layers
         self.pool = pool
@@ -40,14 +44,21 @@ class GIN(torch.nn.Module):
                             Linear(hidden_dim, hidden_dim))
             conv = GINConv(nn)
             self.convs.append(conv)
-            self.bns.append(BatchNorm1d(hidden_dim))
+            if act == 'prelu':
+                a = torch.nn.PReLU()
+            else:
+                a = torch.nn.ReLU()
+            self.acts.append(a)
+            if bn:
+                self.bns.append(BatchNorm1d(hidden_dim))
 
     def forward(self, x, edge_index, batch):
         xs = []
         for i in range(self.n_layers):
             x = self.convs[i](x, edge_index)
-            x = self.bns[i](x)
-            x = F.relu(x)
+            x = self.acts[i](x)
+            if self.bn is not None:
+                x = self.bns[i](x)
             xs.append(x)
 
         if self.pool == 'sum':
@@ -61,25 +72,46 @@ class GIN(torch.nn.Module):
 
 class GCN(torch.nn.Module):
     def __init__(self, input_dim, hidden_dim, n_layers=5,
-                 pool='sum'):
+                 pool='sum', bn=False, act='relu', bias=True, xavier=True):
         super(GCN, self).__init__()
 
-        self.bns = torch.nn.ModuleList()
+        if bn:
+            self.bns = torch.nn.ModuleList()
+        else:
+            self.bns = None
         self.convs = torch.nn.ModuleList()
+        self.acts = torch.nn.ModuleList()
+
         self.n_layers = n_layers
         self.pool = pool
 
         for i in range(n_layers):
             start_dim = hidden_dim if i else input_dim
-            conv = GCNConv(start_dim, hidden_dim)
+            conv = GCNConv(start_dim, hidden_dim, bias=bias)
+            if xavier:
+                self.weights_init(conv)
             self.convs.append(conv)
-            self.bns.append(BatchNorm1d(hidden_dim))
+            if act == 'prelu':
+                a = torch.nn.PReLU()
+            else:
+                a = torch.nn.ReLU()
+            self.acts.append(a)
+            if bn:
+                self.bns.append(BatchNorm1d(hidden_dim))
+
+    def weights_init(self, m):
+        if isinstance(m, GCNConv):
+            torch.nn.init.xavier_uniform_(m.weight.data)
+            if m.bias is not None:
+                m.bias.data.fill_(0.0)
 
     def forward(self, x, edge_index, batch):
         xs = []
         for i in range(self.n_layers):
-            x = F.relu(self.convs[i](x, edge_index))
-            x = self.bns[i](x)
+            x = self.convs[i](x, edge_index)
+            x = self.acts[i](x)
+            if self.bns is not None:
+                x = self.bns[i](x)
             xs.append(x)
 
         if self.pool == 'sum':
