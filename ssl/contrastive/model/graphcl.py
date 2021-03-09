@@ -5,8 +5,9 @@ from ssl.contrastive.views_fn import node_attr_mask, edge_perturbation, uniform_
 
 class GraphCL(Contrastive):
     
-    def __init__(self, aug_1, aug_2, aug_ratio=0.2, device=None):
+    def __init__(self, dim, aug_1, aug_2, aug_ratio=0.2, device=None):
         '''
+        dim: Integer. Embedding dimension.
         aug1, aug2: String. Should be in ['dropN', 'permE', 'subgraph', 
                     'maskN', 'random2', 'random3', 'random4'].
         aug_ratio: Float between (0,1).
@@ -43,6 +44,7 @@ class GraphCL(Contrastive):
         
         super(GraphCL, self).__init__(objective='NCE',
                                       views_fn=views_fn,
+                                      dim=dim,
                                       proj='MLP',
                                       node_level=False,
                                       device=device)

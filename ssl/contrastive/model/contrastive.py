@@ -1,12 +1,13 @@
 import sys, torch
 import torch.nn as nn
-from ssl.contrastive.views_fn import *
 from ssl.contrastive.objectives import NCE_loss, JSE_loss
 
-class Contrastive():
+class Contrastive(nn.Module):
     def __init__(self, 
                  objective,
                  views_fn,
+                 z_dim,
+                 graph_level = True,
                  node_level = False,
                  proj = None,
                  proj_n = None,
@@ -15,22 +16,41 @@ class Contrastive():
         Args:
             objective: String or function. If string, should be one of 'NCE' and 'JSE'.
             views_fn: List of functions. Functions to perform view transformation.
-            node_level: Boolean. Whether to perform nodel level contrast.
+            graph_level: Boolean. Whether to include graph-level embedding for contrast.
+            node_level: Boolean. Whether to include node-level embedding for contrast.
             proj: String, function or None. Projection head for graph-level representation. 
                   If string, should be one of 'linear' and 'MLP'.
             proj_n: String, function or None. Projection head for node-level representations. 
                     If string, should be one of 'linear' and 'MLP'. Required when node_level
                     is True.
         """
+        assert node_level is not None or graph_level is not None
 
         self.loss_fn = self._get_loss(objective)
         self.views_fn = views_fn # fn: (batched) graph -> graph
         self.device = device
-        self.proj = proj
         self.node_level = node_level
+        self.graph_level = graph_level
+        self.z_dim = z_dim
+        
+        if graph_level and self.proj is not None:
+            self.proj_head_g = self._get_proj(proj, z_dim)
+            optimizer.add_param_group({"params": self.proj_head_g})
+        elif graph_level:
+            self.proj_head_g = lambda x: x
+        else:
+            self.proj_head_g = None
+            
+        if node_level and self.proj_n is not None:
+            self.proj_head_n = self._get_proj(self.proj[1], z_n_dim)
+            optimizer.add_param_group([{"params": self.proj_head_n}])
+        elif node_level:
+            self.proj_head_n = lambda x: x
+        else:
+            self.proj_head_n = None
         
         
-    def train(self, encoders, data_loader, optimizer, epochs):
+    def train(self, encoder, data_loader, optimizer, epochs):
         """
         Args:
             encoder: Trainable pytorch model or list of models. Callable with inputs (X, edge_index, batch).
@@ -39,70 +59,77 @@ class Contrastive():
             dataloader: Dataloader.
         """
         
-        if isinstance(encoders, list):
-            assert len(encoders)==len(self.views_fn)
-            single_enc = False
+        if self.node_level and self.graph_level:
+            return self.train_encoder_node_level(encoder, data_loader, optimizer, epochs)
+        elif self.graph_level:
+            return self.train_encoder_graph(encoder, data_loader, optimizer, epochs)
         else:
-            single_enc = True
-            encoders = [encoders]*len(self.views_fn)
-        
-        if self.node_level:
-            return self.train_encoder_node_level(single_enc, encoders, data_loader, optimizer, epochs)
-        else:
-            return self.train_encoder(single_enc, encoders, data_loader, optimizer, epochs)
+            return self.train_encoder_node(encoder, data_loader, optimizer, epochs)
 
         
-    def train_encoder(self, single_enc, encoders, data_loader, optimizer, epochs):
+    def train_encoder_graph(self, encoder, data_loader, optimizer, epochs):
         
-        data = list(data_loader)[0].to(torch.device(self.device))
-        z_dim = encoders[0](data).shape[1]
-        
-        if self.proj is not None:
-            self.proj_head = self._get_proj(self.proj, z_dim)
-            optimizer.add_param_group({"params": self.proj_head})
+        # output of each encoder should be Tensor for graph-level embedding
+        if isinstance(encoder, list):
+            assert len(encoder)==len(self.views_fn)
+            encoders = encoder
         else:
-            self.proj_head = lambda x: x
+            encoders = [encoder]*len(self.views_fn)
 
-        [encoder.train() for encoder in encoders]
-        self.proj_head.train()
+        [enc.train() for enc in encoders]
+        self.proj_head_g.train()
         for epoch in range(epochs):
             for data in data_loader:
                 optimizer.zero_grad()
                 zs = []
-                for v_fn, encoder in zip(self.views_fn, encoders):
+                for v_fn, enc in zip(self.views_fn, encoders):
                     view = v_fn(data).to(torch.device(self.device))
-                    z = encoder(view)
-                    zs.append(self.proj_head(z))
+                    z = enc(view)
+                    zs.append(self.proj_head_g(z))
 
                 loss = self.loss_fn(zs)
                 loss.backward()
                 optimizer.step()
-                
-        if single_enc:
-            encoders = encoders[0]
 
-        return encoders, self.proj_head
+        return encoder, self.proj_head
 
     
-    def train_encoder_node_level(self, single_enc, encoders, data_loader, optimizer, epochs):
+    def train_encoder_node(self, encoder, data_loader, optimizer, epochs):
+        
+        # output of each encoder should be Tensor for node-level embedding
+        if isinstance(encoder, list):
+            assert len(encoder)==len(self.views_fn)
+            encoders = encoder
+        else:
+            encoders = [encoder]*len(self.views_fn)
+        
+        [encoder.train() for encoder in encoders]
+        self.proj_head_n.train()
+        for epoch in epochs:
+            for data in data_loader:
+                optimizer.zero_grad()
+                zs_n = []
+                for v_fn, encoder in zip(self.views_fn, encoders):            
+                    view = v_fn(data).to(torch.device(self.device))
+                    z_n = encoder(view)
+                    zs_n.append(self.proj_head_n(z_n))
+
+                loss = self.loss_fn(zs_g=None, zs_n=zs_n, batch=data.batch)
+                loss.backward()
+                optimizer.step()
+            
+        return encoder, self.proj_head_n
+    
+    
+    def train_encoder_node_graph(self, encoder, data_loader, optimizer, epochs):
         
         # output of each encoder should be tuple of (node_embed, graph_embed)
-        data = list(data_loader)[0].to(torch.device(self.device))
-        z_n, z_g = encoders[0](data)
-        z_n_dim, z_g_dim = z_n.shape[1], z_g.shape[1]
+        if isinstance(encoder, list):
+            assert len(encoder)==len(self.views_fn)
+            encoders = encoder
+        else:
+            encoders = [encoder]*len(self.views_fn)
         
-        if self.proj is not None:
-            self.proj_head_g = self._get_proj(self.proj[0], z_g_dim)
-            optimizer.add_param_group([{"params": self.proj_head_g}])
-        else:
-            self.proj_head_g = lambda x: x
-            
-        if self.proj_n is not None:
-            self.proj_head_n = self._get_proj(self.proj[1], z_n_dim)
-            optimizer.add_param_group([{"params": self.proj_head_n}])
-        else:
-            self.proj_head_n = lambda x: x
-
         [encoder.train() for encoder in encoders]
         self.proj_head_n.train()
         self.proj_head_g.train()
@@ -119,11 +146,8 @@ class Contrastive():
                 loss = self.loss_fn(zs_g, zs_n=zs_n, batch=data.batch)
                 loss.backward()
                 optimizer.step()
-
-        if single_enc:
-            encoders = encoders[0]
             
-        return encoders, (self.proj_head_n, self.proj_head_g)
+        return encoder, (self.proj_head_n, self.proj_head_g)
     
     
     def _get_proj(self, proj_head, z_dim):

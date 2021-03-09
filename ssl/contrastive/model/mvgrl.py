@@ -31,7 +31,7 @@ class MVGRL_enc(nn.Module):
     
 class MVGRL(Contrastive):
     
-    def __init__(self, diffusion_type='ppr', alpha, t):        
+    def __init__(self, dim, diffusion_type='ppr', alpha=None, t=None):        
         '''
         Args:
             diffusion_type: String. Diffusion instantiation mode with two options:
@@ -46,6 +46,7 @@ class MVGRL(Contrastive):
         super(GraphCL, self).__init__(objective='JSE',
                                       views_fn=views_fn,
                                       node_level=True,
+                                      dim=dim,
                                       proj='MLP',
                                       proj_n='MLP',
                                       device=device)

@@ -16,3 +16,14 @@ def random_view(candidates):
         return Batch.from_data_list(transformed_list)
     
     return views_fn
+
+
+def combine(fn_sequence):
+    
+    def views_fn(data):
+        for fn in fn_sequence:
+            data = fn(data)
+        
+        return data
+    
+    return views_fn
