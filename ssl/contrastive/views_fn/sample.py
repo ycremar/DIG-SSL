@@ -8,7 +8,6 @@ def uniform_sample(ratio=0.1):
     '''
     Args:
         ratio: Percentage of nodes to drop.
-        add_self_loop (bool): Set True if add self-loop in edge_index.
     '''
     def do_trans(data):
         
