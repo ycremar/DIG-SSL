@@ -41,8 +41,8 @@ class EvalUnsupevised(object):
     
 class EvalSemisupevised(object):
     
-    def __init__(self, dataset, label_rate, out_dim, 
-                 task='clf', metric='acc', n_folds=10, device=None):
+    def __init__(self, dataset, label_rate, out_dim, loss=nn.functional.nll_loss, 
+                 epoch_select='test_max', metric='acc', n_folds=10, device=None):
         
         self.dataset = get_dataset(dataset)
         self.label_rate = label_rate
@@ -51,6 +51,8 @@ class EvalSemisupevised(object):
         self.metric = metric
         self.n_folds = n_folds
         self.device = device
+        self.loss = loss
+        self.epoch_select = epoch_select
         
         # Use default config if not further specified
         self.setup_train_config()
@@ -88,13 +90,36 @@ class EvalSemisupevised(object):
         encoder = learning_model.train(encoder, pretrain_loader, self.p_optimizer, self.p_epochs)
         model = PredictionModel(encoder, pred_head, learning_model.dim, self.out_dim)
         
+        test_metrics = []
+        val_losses = []
         for fold, (train_loader, test_loader, val_loader) in enumerate(zip(self.k_fold(fold_seed))):
             
             fold_model = copy.deepcopy(model)            
             f_optimizer = self.get_optim(f_optim)(model.parameters(), lr=p_lr, 
                                                   weight_decay=p_weight_decay)
             self.finetune(fold_model, f_optimizer, train_loader)
+            val_losses.append(self.eval_loss(fold_model, val_loader))
+            test_metrics.append(self.eval_metric(fold_model, test_loader))
             
+        val_loss, test_acc = torch.tensor(val_losses), torch.tensor(test_accs)
+        val_loss = val_loss.view(self.n_folds, self.epochs)
+        test_acc = test_acc.view(self.n_folds, self.epochs)
+
+        if epoch_select == 'test_max':
+            _, selection =  test_metrics.mean(dim=0).max(dim=0)
+            selection = selection.repeat(self.n_folds)
+        elif epoch_select == 'test_min':
+            _, selection =  test_metrics.mean(dim=0).min(dim=0)
+            selection = selection.repeat(self.n_folds)
+        else:
+            _, selection =  val_losses.min(dim=1)
+
+        test_acc = test_acc[torch.arange(self.n_folds, dtype=torch.long), selection]
+        test_acc_mean = test_acc.mean().item()
+        test_acc_std = test_acc.std().item() 
+        
+        return test_acc_mean, test_acc_std
+
     
     def finetune(self, model, optimizer, loader):
         
@@ -104,7 +129,7 @@ class EvalSemisupevised(object):
             optimizer.zero_grad()
             data = data.to(torch.device('cuda:' + str(self.device)))
             out = model(data)
-            loss = self.get_loss()(out, data.y.view(-1))
+            loss = self.loss(out, data.y.view(-1))
             pred = out.max(1)[1]
             correct += pred.eq(data.y.view(-1)).sum().item()
             loss.backward()
@@ -152,6 +177,37 @@ class EvalSemisupevised(object):
         test_loader = DataLoader(self.dataset[test_indices], self.batch_size, shuffle=True)
         val_loader = DataLoader(self.dataset[val_indices], self.batch_size, shuffle=True)
         return train_loader, test_loader, val_loader
+    
+    
+    def eval_loss(self, model, loader, eval_mode=True):
+        
+        if eval_mode:
+            model.eval()
+
+        loss = 0
+        for data in loader:
+            data = data.to(torch.device('cuda:' + str(self.device)))
+            with torch.no_grad():
+                pred = model(data)
+            loss += self.loss(pred, data.y.view(-1), reduction='sum').item()
+            
+        return loss / len(loader.dataset)
+    
+    
+    def eval_acc(self, model, loader, eval_mode=True):
+        
+        if eval_mode:
+            model.eval()
+
+        correct = 0
+        for data in loader:
+            data = data.to(torch.device('cuda:' + str(self.device)))
+            with torch.no_grad():
+                pred = model(data).max(1)[1]
+            correct += pred.eq(data.y.view(-1)).sum().item()
+            
+        return correct / len(loader.dataset)
+    
         
     def get_optim(self, optim):
         
@@ -159,8 +215,7 @@ class EvalSemisupevised(object):
         
         return optims[optim]
     
-    def get_loss(self):
+    def eval_metric(self, model, loader, eval_mode=True):
         
-        losses = {'clf': nn.functional.nll_loss}
-        
-        return losses[self.task]
+        if self.metric == 'acc':
+            return self.eval_acc(model, loader, eval_mode)
