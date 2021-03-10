@@ -9,13 +9,18 @@ class MVGRL_enc(nn.Module):
         MVGRL includes projection heads and combines two views and encoders
         when inferencing representation
     '''
-    def __init__(self, encoder_0, encoder_1, proj, proj_n, views_fn):
+    def __init__(self, encoder_0, encoder_1, 
+                 proj, proj_n, views_fn, 
+                 graph_level=True, node_level=True):
+        
         super(MVGRL_enc, self).__init__()
         self.encoder_0 = encoder_0
         self.encoder_1 = encoder_1
         self.proj = proj
         self.proj_n = proj_n
         self.views_fn = views_fn
+        self.graph_level = graph_level
+        self.node_level = node_level
         
     def forward(self, data):
         zg_1, zn_1 = self.encoder_0(views_fn[0](data))
@@ -26,12 +31,19 @@ class MVGRL_enc(nn.Module):
         zg_2 = self.proj(zg_2)
         zn_2 = self.proj_n(zn_2)
         
-        return (zg_1 + zg_2), (zn_1 + zn_2)
+        if self.graph_level and self.node_level:
+            return (zg_1 + zg_2), (zn_1 + zn_2)
+        elif self.graph_level:
+            return zg_1 + zg_2
+        elif self.node_level:
+            return zn_1 + zn_2
+        else:
+            return None
 
     
 class MVGRL(Contrastive):
     
-    def __init__(self, dim, diffusion_type='ppr', alpha=None, t=None):        
+    def __init__(self, dim, diffusion_type='ppr', alpha=None, t=None, graph_level=True, node_level=False):        
         '''
         Args:
             diffusion_type: String. Diffusion instantiation mode with two options:
@@ -43,6 +55,8 @@ class MVGRL(Contrastive):
         views_fn = [lambda x: x,
                     diffusion(mode=diffusion_type, alpha=alpha, t=t)
                    ]
+        self.graph_level = graph_level
+        self.node_level = node_level
         super(GraphCL, self).__init__(objective='JSE',
                                       views_fn=views_fn,
                                       node_level=True,
@@ -53,6 +67,6 @@ class MVGRL(Contrastive):
         
     def train(self, encoders, data_loader, optimizer, epochs):
         encs, (proj, proj_n) = super().train(self, encoders, data_loader, optimizer, epochs)
-        encoder = MVGRL_enc(encs[0], enc[1], proj, proj_n, self.view_fn)
+        encoder = MVGRL_enc(encs[0], enc[1], proj, proj_n, self.view_fn, self.graph_level, self.node_level)
         
         return encoder
