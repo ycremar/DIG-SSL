@@ -92,7 +92,9 @@ class EvalSemisupevised(object):
         
         test_metrics = []
         val_losses = []
-        for fold, (train_loader, test_loader, val_loader) in enumerate(zip(self.k_fold(fold_seed))):
+        val = (epoch_select == 'test_max' or epoch_select == 'test_min')
+        for fold, (train_loader, test_loader, val_loader) in enumerate(zip(
+            k_fold(self.n_folds, self.dataset, self.batch_size, self.label_rate, val, fold_seed))):
             
             fold_model = copy.deepcopy(model)            
             f_optimizer = self.get_optim(f_optim)(model.parameters(), lr=p_lr, 
@@ -156,47 +158,6 @@ class EvalSemisupevised(object):
         return correct / len(loader.dataset)
     
     
-    def k_fold(self, seed):
-        skf = StratifiedKFold(self.n_folds, shuffle=True, random_state=seed)
-
-        test_indices, train_indices = [], []
-        for _, idx in skf.split(torch.zeros(len(self.dataset)), self.dataset.data.y):
-            test_indices.append(torch.from_numpy(idx))
-
-        if epoch_select == 'test_max':
-            val_indices = [test_indices[i] for i in range(self.n_folds)]
-        else: # val_max
-            val_indices = [test_indices[i - 1] for i in range(self.n_folds)]
-
-        if self.label_rate < 1:
-
-            label_skf = StratifiedKFold(int(1.0/self.label_rate), shuffle=True, random_state=seed)
-            for i in range(folds):
-                train_mask = torch.ones(len(self.dataset), dtype=torch.uint8)
-                train_mask[test_indices[i].long()] = 0
-                train_mask[val_indices[i].long()] = 0
-                idx_train = train_mask.nonzero(as_tuple=False).view(-1)
-
-                for _, idx in label_skf.split(torch.zeros(idx_train.size()[0]), 
-                                              self.dataset.data.y[idx_train]):
-                    idx_train = idx_train[idx]
-                    break
-
-                train_indices.append(idx_train)
-        else:
-            for i in range(folds):
-                train_mask = torch.ones(len(self.dataset), dtype=torch.uint8)
-                train_mask[test_indices[i].long()] = 0
-                train_mask[val_indices[i].long()] = 0
-                idx_train = train_mask.nonzero(as_tuple=False).view(-1)
-                train_indices.append(idx_train)
-
-        train_loader = DataLoader(self.dataset[train_indices], self.batch_size, shuffle=True)
-        test_loader = DataLoader(self.dataset[test_indices], self.batch_size, shuffle=True)
-        val_loader = DataLoader(self.dataset[val_indices], self.batch_size, shuffle=True)
-        return train_loader, test_loader, val_loader
-    
-    
     def eval_loss(self, model, loader, eval_mode=True):
         
         if eval_mode:
@@ -237,3 +198,45 @@ class EvalSemisupevised(object):
         
         if self.metric == 'acc':
             return self.eval_acc(model, loader, eval_mode)
+        
+    
+    
+def k_fold(n_folds, dataset, batch_size, label_rate=1, val=False, seed=12345):
+    skf = StratifiedKFold(n_folds, shuffle=True, random_state=seed)
+
+    test_indices, train_indices = [], []
+    for _, idx in skf.split(torch.zeros(len(dataset)), dataset.data.y):
+        test_indices.append(torch.from_numpy(idx))
+
+    if val:
+        val_indices = [test_indices[i - 1] for i in range(n_folds)]
+    else:
+        val_indices = [test_indices[i] for i in range(n_folds)]
+
+    if self.label_rate < 1:
+        label_skf = StratifiedKFold(int(1.0/label_rate), shuffle=True, random_state=seed)
+        for i in range(folds):
+            train_mask = torch.ones(len(self.dataset), dtype=torch.uint8)
+            train_mask[test_indices[i].long()] = 0
+            train_mask[val_indices[i].long()] = 0
+            idx_train = train_mask.nonzero(as_tuple=False).view(-1)
+
+            for _, idx in label_skf.split(torch.zeros(idx_train.size()[0]), 
+                                          self.dataset.data.y[idx_train]):
+                idx_train = idx_train[idx]
+                break
+
+            train_indices.append(idx_train)
+    else:
+        for i in range(folds):
+            train_mask = torch.ones(len(dataset), dtype=torch.uint8)
+            train_mask[test_indices[i].long()] = 0
+            train_mask[val_indices[i].long()] = 0
+            idx_train = train_mask.nonzero(as_tuple=False).view(-1)
+            train_indices.append(idx_train)
+
+    train_loader = DataLoader(dataset[train_indices], batch_size, shuffle=True)
+    test_loader = DataLoader(dataset[test_indices], batch_size, shuffle=True)
+    val_loader = DataLoader(dataset[val_indices], batch_size, shuffle=True)
+
+    return train_loader, test_loader, val_loader
