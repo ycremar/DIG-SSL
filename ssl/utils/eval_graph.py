@@ -119,6 +119,24 @@ class EvalSemisupevised(object):
         test_acc_std = test_acc.std().item() 
         
         return test_acc_mean, test_acc_std
+    
+    
+    def grid_search(self, learning_model, encoder, pred_head=None, fold_seed=12345,
+                    p_lr_lst=[0.1,0.01,0.001,0.0001], p_epoch_lst=[20,40,60,80,100]):
+        
+        acc_m_lst = []
+        acc_sd_lst = []
+        paras = []
+        for p_lr in p_lr_lst:
+            for p_epoch in p_epoch_lst:
+                self.setup_train_config(p_lr=p_lr, p_epoch=p_epoch)
+                acc_m, acc_sd = self.evaluate(learning_model, encoder, pred_head, fold_seed)
+                acc_m_lst.append(acc_m)
+                acc_sd_lst.append(acc_sd)
+                paras.append((p_lr, p_epoch))
+        idx = np.argmax(acc_m)
+        
+        return acc_m[idx], acc_sd[idx], paras[idx]
 
     
     def finetune(self, model, optimizer, loader):
