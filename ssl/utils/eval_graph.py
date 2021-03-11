@@ -92,7 +92,7 @@ class EvalSemisupevised(object):
         
         test_metrics = []
         val_losses = []
-        val = (epoch_select == 'test_max' or epoch_select == 'test_min')
+        val = not (epoch_select == 'test_max' or epoch_select == 'test_min')
         for fold, (train_loader, test_loader, val_loader) in enumerate(zip(
             k_fold(self.n_folds, self.dataset, self.batch_size, self.label_rate, val, fold_seed))):
             
