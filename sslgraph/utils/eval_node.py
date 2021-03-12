@@ -5,8 +5,6 @@ from sklearn.model_selection import StratifiedKFold
 from torch_geometric.data import DataLoader
 from torch import optim
 
-from ssl.utils.datasets import get_dataset
-
 class PredictionModel(nn.Module):
     
     def __init__(self, encoder, pred_head, dim, out_dim):
@@ -44,7 +42,7 @@ class EvalSemisupevised(object):
     def __init__(self, dataset, label_rate, out_dim, 
                  task='clf', metric='acc', n_folds=10, device=None):
         
-        self.dataset = get_dataset(dataset)
+        self.dataset = dataset
         self.label_rate = label_rate
         self.out_dim = out_dim
         self.task = task

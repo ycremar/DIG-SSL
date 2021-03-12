@@ -238,7 +238,7 @@ class ResGCN(torch.nn.Module):
                  global_pool="sum", dropout=0, dge_norm=True):
 
         super(ResGCN, self).__init__()
-        assert num_feat_layers == 1 "more feat layers are not now supported"
+        assert num_feat_layers == 1, "more feat layers are not now supported"
         self.conv_residual = residual
         self.fc_residual = False  # no skip-connections for fc layers.
         self.collapse = collapse

@@ -22,6 +22,41 @@ from copy import deepcopy
 from .feat_expansion import FeatureExpander
 
 
+def get_dataset(name, task, sparse=True, feat_str="deg+ak3+reall", root=None):
+    if task == "semisupervised":
+
+        if name in ['REDDIT-BINARY', 'REDDIT-MULTI-5K', 'REDDIT-MULTI-12K']:
+            feat_str = feat_str.replace('odeg100', 'odeg10')
+        if name in ['DD']:
+            feat_str = feat_str.replace('odeg100', 'odeg10')
+            feat_str = feat_str.replace('ak3', 'ak1')
+
+        degree = feat_str.find("deg") >= 0
+        onehot_maxdeg = re.findall("odeg(\d+)", feat_str)
+        onehot_maxdeg = int(onehot_maxdeg[0]) if onehot_maxdeg else None
+
+        pre_transform = FeatureExpander(degree=degree, onehot_maxdeg=onehot_maxdeg, AK=0).transform
+
+        dataset = TUDatasetExt("./dataset/", name, task, pre_transform=pre_transform, use_node_attr=True,
+                               processed_filename="data_%s.pt" % feat_str)
+
+        dataset_pretrain = TUDatasetExt("./pretrain_dataset/", name, task, pre_transform=pre_transform,
+                                        use_node_attr=True,
+                                        processed_filename="data_%s.pt" % feat_str)
+
+        dataset.data.edge_attr = None
+        dataset_pretrain.data.edge_attr = None
+
+        return dataset, dataset_pretrain
+
+    elif task == "unsupervised":
+        dataset = TUDatasetExt("./unsuper_dataset/", name=name, task=task)
+        return dataset
+
+    else:
+        ValueError("Wrong task name")
+
+
 class TUDatasetExt(InMemoryDataset):
     '''
     Used in GraphCL for feature expansion
@@ -43,11 +78,11 @@ class TUDatasetExt(InMemoryDataset):
                  processed_filename='data.pt'
                  ):
         self.processed_filename = processed_filename
+        self.name = name
+        self.cleaned = cleaned
         super(TUDatasetExt, self).__init__(root, transform, pre_transform, pre_filter)
 
         self.task = task
-        self.name = name
-        self.cleaned = cleaned
 
         if self.task == "semisupervised":
             self.data, self.slices = torch.load(self.processed_paths[0])
@@ -207,40 +242,6 @@ class TUDatasetExt(InMemoryDataset):
 
         return data
 
-
-def get_dataset(name, task, sparse=True, feat_str="deg+ak3+reall", root=None):
-    if task == "semisupervised":
-
-        if name in ['REDDIT-BINARY', 'REDDIT-MULTI-5K', 'REDDIT-MULTI-12K']:
-            feat_str = feat_str.replace('odeg100', 'odeg10')
-        if name in ['DD']:
-            feat_str = feat_str.replace('odeg100', 'odeg10')
-            feat_str = feat_str.replace('ak3', 'ak1')
-
-        degree = feat_str.find("deg") >= 0
-        onehot_maxdeg = re.findall("odeg(\d+)", feat_str)
-        onehot_maxdeg = int(onehot_maxdeg[0]) if onehot_maxdeg else None
-
-        pre_transform = FeatureExpander(degree=degree, onehot_maxdeg=onehot_maxdeg, AK=0).transform
-
-        dataset = TUDatasetExt("./dataset/", name, task, pre_transform=pre_transform, use_node_attr=True,
-                               processed_filename="data_%s.pt" % feat_str)
-
-        dataset_pretrain = TUDatasetExt("./pretrain_dataset/", name, task, pre_transform=pre_transform,
-                                        use_node_attr=True,
-                                        processed_filename="data_%s.pt" % feat_str)
-
-        dataset.data.edge_attr = None
-        dataset_pretrain.data.edge_attr = None
-
-        return dataset, dataset_pretrain
-
-    elif task == "unsupervised":
-        dataset = TUDatasetExt("./unsuper_dataset/", name=args.dataset, task=task)
-        return dataset
-
-    else:
-        ValueError("Wrong task name")
 
 
 class NodeDataset(InMemoryDataset):

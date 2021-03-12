@@ -5,8 +5,6 @@ from sklearn.model_selection import StratifiedKFold
 from torch_geometric.data import DataLoader
 from torch import optim
 
-from ssl.utils.datasets import get_dataset
-
 from sklearn.svm import SVC
 from sklearn import preprocessing
 from sklearn.metrics import accuracy_score
@@ -37,7 +35,7 @@ class EvalUnsupevised(object):
     def __init__(self, dataset, out_dim, 
                  epoch_select='test_max', metric='acc', n_folds=10, device=None):
         
-        self.dataset = get_dataset(dataset, task="unsupervised")
+        self.dataset = dataset
         self.epoch_select = epoch_select
         self.metric = metric
         self.n_folds = n_folds
@@ -66,7 +64,7 @@ class EvalUnsupevised(object):
         '''
         Args:
             learning_model: An object of a contrastive model or a predictive model.
-            encoder: Trainable pytorch model or list of models.
+            encoder: List or trainable pytorch model.
             pred_head: [Optional] Trainable pytoch model. If None, will use linear projection.
         '''
         
