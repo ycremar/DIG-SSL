@@ -13,18 +13,19 @@ from torch_geometric.nn.inits import glorot, zeros
 
 
 class Encoder(torch.nn.Module):
-    def __init__(self, input_dim, hidden_dim, n_layers=5,
+    def __init__(self, feat_dim, hidden_dim, n_layers=5,
                  pool='sum', gnn='gin', bn=False, act='relu',
                  bias=True, xavier=True, node_level=False, graph_level=True,
                  xg_dim=None):
         super(Encoder, self).__init__()
 
         if gnn == 'gin':
-            self.encoder = GIN(input_dim, hidden_dim, n_layers, pool, bn, act)
+            self.encoder = GIN(feat_dim, hidden_dim, n_layers, pool, bn, act)
         elif gnn == 'gcn':
-            self.encoder = GCN(input_dim, hidden_dim, n_layers, pool, bn, act, bias, xavier)
+            self.encoder = GCN(feat_dim, hidden_dim, n_layers, pool, bn, act, bias, xavier)
         elif gnn == 'resgcn':
-            self.encoder = ResGCN(hidden_dim, num_conv_layers=n_layers, global_pool=pool, xg_dim=xg_dim)
+            self.encoder = ResGCN(feat_dim, hidden_dim, num_conv_layers=n_layers, 
+                                  global_pool=pool, xg_dim=xg_dim)
 
         self.node_level = node_level
         self.graph_level = graph_level
@@ -40,7 +41,7 @@ class Encoder(torch.nn.Module):
 
 
 class GIN(torch.nn.Module):
-    def __init__(self, input_dim, hidden_dim, n_layers=5,
+    def __init__(self, feat_dim, hidden_dim, n_layers=5,
                  pool='sum', bn=False, act='relu', bias=True, xavier=True):
         super(GIN, self).__init__()
 
@@ -77,7 +78,8 @@ class GIN(torch.nn.Module):
             if m.bias is not None:
                 m.bias.data.fill_(0.0)
 
-    def forward(self, x, edge_index, batch):
+    def forward(self, data):
+        x, edge_index, batch = data.x, data.edge_index, data.batch
         xs = []
         for i in range(self.n_layers):
             x = self.convs[i](x, edge_index)
@@ -96,7 +98,7 @@ class GIN(torch.nn.Module):
 
 
 class GCN(torch.nn.Module):
-    def __init__(self, input_dim, hidden_dim, n_layers=5,
+    def __init__(self, feat_dim, hidden_dim, n_layers=5,
                  pool='sum', bn=False, act='relu', bias=True, xavier=True):
         super(GCN, self).__init__()
 
@@ -130,7 +132,8 @@ class GCN(torch.nn.Module):
             if m.bias is not None:
                 m.bias.data.fill_(0.0)
 
-    def forward(self, x, edge_index, batch):
+    def forward(self, data):
+        x, edge_index, batch = data.x, data.edge_index, data.batch
         xs = []
         for i in range(self.n_layers):
             x = self.convs[i](x, edge_index)
@@ -146,6 +149,7 @@ class GCN(torch.nn.Module):
         global_rep = torch.cat(xpool, 1)
 
         return global_rep, x
+    
 
 
 class ResGCNConv(MessagePassing):
@@ -228,14 +232,16 @@ class ResGCNConv(MessagePassing):
 
     def __repr__(self):
         return '{}({}, {})'.format(self.__class__.__name__, self.in_channels, self.out_channels)
+    
+    
 
 class ResGCN(torch.nn.Module):
-    def __init__(self, hidden_dim, 
+    def __init__(self, feat_dim, hidden_dim, 
                  num_feat_layers=1, 
                  num_conv_layers=3,
                  num_fc_layers=2, xg_dim=None,
                  gfn=False, collapse=False, residual=False,
-                 global_pool="sum", dropout=0, dge_norm=True):
+                 global_pool="sum", dropout=0, edge_norm=True):
 
         super(ResGCN, self).__init__()
         assert num_feat_layers == 1, "more feat layers are not now supported"
@@ -260,16 +266,15 @@ class ResGCN(torch.nn.Module):
         else:
             self.use_xg = False
 
-        hidden_in = dataset.num_features
         if collapse:
-            self.bn_feat = BatchNorm1d(hidden_in)
+            self.bn_feat = BatchNorm1d(feat_dim)
             self.bns_fc = torch.nn.ModuleList()
             self.lins = torch.nn.ModuleList()
             if "gating" in global_pool:
                 self.gating = torch.nn.Sequential(
-                    Linear(hidden_in, hidden_in),
+                    Linear(feat_dim, feat_dim),
                     torch.nn.ReLU(),
-                    Linear(hidden_in, 1),
+                    Linear(feat_dim, 1),
                     torch.nn.Sigmoid())
             else:
                 self.gating = None
@@ -277,11 +282,10 @@ class ResGCN(torch.nn.Module):
                 self.bns_fc.append(BatchNorm1d(hidden_in))
                 self.lins.append(Linear(hidden_in, hidden_dim))
                 hidden_in = hidden_dim
-            self.lin_class = Linear(hidden_in, dataset.num_classes)
         else:
-            self.bn_feat = BatchNorm1d(hidden_in)
+            self.bn_feat = BatchNorm1d(feat_dim)
             feat_gfn = True  # set true so GCNConv is feat transform
-            self.conv_feat = ResGCNConv(hidden_in, hidden_dim, gfn=feat_gfn)
+            self.conv_feat = ResGCNConv(feat_dim, hidden_dim, gfn=feat_gfn)
             if "gating" in global_pool:
                 self.gating = torch.nn.Sequential(
                     Linear(hidden_dim, hidden_dim),

@@ -80,9 +80,8 @@ class TUDatasetExt(InMemoryDataset):
         self.processed_filename = processed_filename
         self.name = name
         self.cleaned = cleaned
-        super(TUDatasetExt, self).__init__(root, transform, pre_transform, pre_filter)
-
         self.task = task
+        super(TUDatasetExt, self).__init__(root, transform, pre_transform, pre_filter)
 
         if self.task == "semisupervised":
             self.data, self.slices = torch.load(self.processed_paths[0])
