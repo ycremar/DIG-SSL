@@ -98,11 +98,11 @@ def diffusion(mode='ppr', alpha=0.2, t=5):
             edge_index tensor with shape [2, num_diff_edges];
             batch tensor with shape [num_nodes].
         '''
-        if isinstance(data, Data):
-            return do_trans(data)
-        elif isinstance(data, Batch):
+        if isinstance(data, Batch):
             dlist = [do_trans(d) for d in data.to_data_list()]
             return Batch.from_data_list(dlist)
+        elif isinstance(data, Data):
+            return do_trans(data)
 
     return views_fn
 
