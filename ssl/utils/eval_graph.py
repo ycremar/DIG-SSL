@@ -333,6 +333,7 @@ class EvalSemisupevised(object):
     
     
 def k_fold(n_folds, dataset, batch_size, label_rate=1, val=False, seed=12345):
+    
     skf = StratifiedKFold(n_folds, shuffle=True, random_state=seed)
 
     test_indices, train_indices = [], []

@@ -1,7 +1,7 @@
 import sys, torch
 import torch.nn as nn
 from .contrastive import Contrastive
-from ssl.contrastive.views_fn import diffusion
+from ssl.contrastive.views_fn import diffusion, diffusion_with_sample
 
 
 class MVGRL_enc(nn.Module):
@@ -43,18 +43,23 @@ class MVGRL_enc(nn.Module):
     
 class MVGRL(Contrastive):
     
-    def __init__(self, dim, diffusion_type='ppr', alpha=None, t=None, graph_level=True, node_level=False):        
+    def __init__(self, dim, diffusion_type='ppr', alpha=None, t=None, 
+                 graph_level=True, node_level=False, subgraph=False, neg_by_crpt=False):
         '''
         Args:
             diffusion_type: String. Diffusion instantiation mode with two options:
-                            'ppr': Personalized PageRank
-                            'heat': heat kernel
+                'ppr': Personalized PageRank
+                'heat': heat kernel
             alpha: Float in (0,1). Teleport probability in a random walk.
             t: Integer. Diffusion time.
+            subgraph: Boolean. Whether to sample subgraph from a large graph. 
+                Set to True for node-level tasks on large graphs.
         '''
-        views_fn = [lambda x: x,
-                    diffusion(mode=diffusion_type, alpha=alpha, t=t)
-                   ]
+        if not subgraph:
+            views_fn = [lambda x: x,
+                        diffusion(mode=diffusion_type, alpha=alpha, t=t)]
+        else:
+            views_gn = [diffusion_with_sample, None]
         self.graph_level = graph_level
         self.node_level = node_level
         super(GraphCL, self).__init__(objective='JSE',
@@ -63,6 +68,7 @@ class MVGRL(Contrastive):
                                       dim=dim,
                                       proj='MLP',
                                       proj_n='MLP',
+                                      neg_by_crpt=neg_by_crpt
                                       device=device)
         
     def train(self, encoders, data_loader, optimizer, epochs):

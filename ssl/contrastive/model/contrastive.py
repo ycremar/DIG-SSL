@@ -90,10 +90,18 @@ class Contrastive(nn.Module):
         for epoch in range(epochs):
             for data in data_loader:
                 optimizer.zero_grad()
+                if None in self.views_fn: 
+                    # For view fn that returns multiple views
+                    views = []
+                    for v_fn in self.views_fn:
+                        if v_fn is not None
+                        views += [*v_fn(data)]
+                else:
+                    views = [v_fn(data) for for v_fn in self.views_fn]
+                
                 zs = []
-                for v_fn, enc in zip(self.views_fn, encoders):
-                    view = v_fn(data).to(torch.device(self.device))
-                    z = self._get_embed(enc, view)
+                for v, enc in zip(views, encoders):
+                    z = self._get_embed(enc, view.to(torch.device(self.device)))
                     zs.append(self.proj_head_g(z))
 
                 loss = self.loss_fn(zs, neg_by_crpt=self.neg_by_crpt)
@@ -117,11 +125,19 @@ class Contrastive(nn.Module):
         for epoch in epochs:
             for data in data_loader:
                 optimizer.zero_grad()
+                if None in self.views_fn:
+                    # For view fn that returns multiple views
+                    views = []
+                    for v_fn in self.views_fn:
+                        if v_fn is not None
+                        views += [*v_fn(data)]
+                else:
+                    views = [v_fn(data) for for v_fn in self.views_fn]
+                
                 zs_n = []
-                for v_fn, enc in zip(self.views_fn, encoders):            
-                    view = v_fn(data).to(torch.device(self.device))
-                    z_n = self._get_embed(enc, view)
-                    zs_n.append(self.proj_head_n(z_n))
+                for v, enc in zip(views, encoders):
+                    z_n = self._get_embed(enc, view.to(torch.device(self.device)))
+                    zs_n.append(self.proj_head_g(z_n))
 
                 loss = self.loss_fn(zs_g=None, zs_n=zs_n, batch=data.batch, 
                                     neg_by_crpt=self.neg_by_crpt)
@@ -146,10 +162,19 @@ class Contrastive(nn.Module):
         for epoch in epochs:
             for data in data_loader:
                 optimizer.zero_grad()
+                if None in self.views_fn:
+                    views = []
+                    for v_fn in self.views_fn:
+                        # For view fn that returns multiple views
+                        if v_fn is not None
+                        views += [*v_fn(data)]
+                    assert len(views)==len(encoders)
+                else:
+                    views = [v_fn(data) for for v_fn in self.views_fn]
+                
                 zs_n, zs_g = [], []
-                for v_fn, enc in zip(self.views_fn, encoders):            
-                    view = v_fn(data).to(torch.device(self.device))
-                    z_g, z_n = self._get_embed(enc, view)
+                for v, enc in zip(views, encoders):
+                    z_g, z_n = self._get_embed(enc, view.to(torch.device(self.device)))
                     zs_n.append(self.proj_head_n(z_n))
                     zs_g.append(self.proj_head_g(z_g))
 
