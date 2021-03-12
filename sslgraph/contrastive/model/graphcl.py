@@ -14,8 +14,10 @@ class GraphCL(Contrastive):
         '''
         views_fn = []
         
-        for aug in [aug_1, aug2]:
-            if aug == 'dropN':
+        for aug in [aug_1, aug_2]:
+            if aug is None:
+                views_fn.append(lambda x: x)
+            elif aug == 'dropN':
                 views_fn.append(uniform_sample(ratio=aug_ratio))
             elif aug == 'permE':
                 views_fn.append(edge_perturbation(ratio=aug_ratio))
@@ -40,17 +42,17 @@ class GraphCL(Contrastive):
                 views_fn.append(random_view(canditates))
             else:
                 raise Exception("Aug must be from [dropN', 'permE', 'subgraph', \
-                                'maskN', 'random2', 'random3', 'random4']")
+                                'maskN', 'random2', 'random3', 'random4'] or None.")
         
         super(GraphCL, self).__init__(objective='NCE',
                                       views_fn=views_fn,
-                                      dim=dim,
+                                      z_dim=dim,
                                       proj='MLP',
                                       node_level=False,
                                       device=device)
         
     def train(self, encoders, data_loader, optimizer, epochs):
         # GraphCL removes projection heads after pre-training
-        enc, proj = super().train(self, encoders, data_loader, optimizer, epochs)
+        enc, proj = super(GraphCL, self).train(encoders, data_loader, optimizer, epochs)
 
         return enc

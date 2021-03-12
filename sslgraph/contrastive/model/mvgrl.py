@@ -62,7 +62,7 @@ class MVGRL(Contrastive):
             views_gn = [diffusion_with_sample, None]
         self.graph_level = graph_level
         self.node_level = node_level
-        super(GraphCL, self).__init__(objective='JSE',
+        super(MVGRL, self).__init__(objective='JSE',
                                       views_fn=views_fn,
                                       node_level=True,
                                       dim=dim,
@@ -72,7 +72,7 @@ class MVGRL(Contrastive):
                                       device=device)
         
     def train(self, encoders, data_loader, optimizer, epochs):
-        encs, (proj, proj_n) = super().train(self, encoders, data_loader, optimizer, epochs)
+        encs, (proj, proj_n) = super(MVGRL, self).train(encoders, data_loader, optimizer, epochs)
         encoder = MVGRL_enc(encs[0], enc[1], proj, proj_n, self.view_fn, self.graph_level, self.node_level)
         
         return encoder

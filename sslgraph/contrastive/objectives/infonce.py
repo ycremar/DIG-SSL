@@ -3,7 +3,7 @@ import numpy as np
 import itertools
 import torch.nn.functional as F
 
-def NCE_loss(zs=None, zs_n=None, batch=None, sigma=None, args=None):
+def NCE_loss(zs=None, zs_n=None, batch=None, sigma=None, **kwargs):
     '''
     Args:
         zs: [Optional] List of tensors of shape [batch_size, z_dim].
@@ -15,12 +15,15 @@ def NCE_loss(zs=None, zs_n=None, batch=None, sigma=None, args=None):
     '''
     assert zs is not None or zs_n is not None
     
-    if args is None:
-        tau = 0.5
-        norm = True
+    if 'tau' in kwargs:
+        tau = kwargs['tau']
     else:
-        tau = args.tau
-        norm = args.norm
+        tau = 0.5
+    
+    if 'norm' in kwargs:
+        norm = kwargs['norm']
+    else:
+        norm = True
         
     if zs_n is not None:
         if zs is None:
@@ -106,7 +109,7 @@ def NT_Xent(z1, z2, tau=0.5, norm=True):
         norm: Boolean. Whether to apply normlization.
     '''
     
-    batch_size, _ = x.size()
+    batch_size, _ = z1.size()
     sim_matrix = torch.einsum('ik,jk->ij', z1, z2)
     
     if norm:

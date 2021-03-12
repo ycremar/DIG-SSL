@@ -42,6 +42,6 @@ class InfoGraph(Contrastive):
                                       device=device)
         
     def train(self, encoders, data_loader, optimizer, epochs):
-        encs, (proj, proj_n) = super().train(self, encoders, data_loader, optimizer, epochs)
+        encs, (proj, proj_n) = super(InfoGraph, self).train(self, encoders, data_loader, optimizer, epochs)
         
         return encoder

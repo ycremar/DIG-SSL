@@ -30,8 +30,8 @@ class Encoder(torch.nn.Module):
         self.node_level = node_level
         self.graph_level = graph_level
 
-    def forward(self, x, edge_index, batch):
-        z_g, z_n = self.encoder(x, edge_index, batch)
+    def forward(self, data):
+        z_g, z_n = self.encoder(data)
         if self.node_level and self.graph_level:
             return z_g, z_n
         elif self.graph_level:
@@ -60,13 +60,13 @@ class GIN(torch.nn.Module):
             a = torch.nn.ReLU()
 
         for i in range(n_layers):
-            start_dim = hidden_dim if i else input_dim
+            start_dim = hidden_dim if i else feat_dim
             nn = Sequential(Linear(start_dim, hidden_dim, bias=bias),
                             a,
                             Linear(hidden_dim, hidden_dim, bias=bias))
-            conv = GINConv(nn)
             if xavier:
-                self.weights_init(conv)
+                self.weights_init(nn)
+            conv = GINConv(nn)
             self.convs.append(conv)
             self.acts.append(a)
             if bn:
@@ -84,7 +84,7 @@ class GIN(torch.nn.Module):
         for i in range(self.n_layers):
             x = self.convs[i](x, edge_index)
             x = self.acts[i](x)
-            if self.bn is not None:
+            if self.bns is not None:
                 x = self.bns[i](x)
             xs.append(x)
 
@@ -117,7 +117,7 @@ class GCN(torch.nn.Module):
             a = torch.nn.ReLU()
 
         for i in range(n_layers):
-            start_dim = hidden_dim if i else input_dim
+            start_dim = hidden_dim if i else feat_dim
             conv = GCNConv(start_dim, hidden_dim, bias=bias)
             if xavier:
                 self.weights_init(conv)
@@ -196,8 +196,8 @@ class ResGCNConv(MessagePassing):
                                  dtype=edge_weight.dtype,
                                  device=edge_weight.device)
         edge_weight = torch.cat([edge_weight, loop_weight], dim=0)
-
         row, col = edge_index
+        
         deg = scatter_add(edge_weight, row, dim=0, dim_size=num_nodes)
         deg_inv_sqrt = deg.pow(-0.5)
         deg_inv_sqrt[deg_inv_sqrt == float('inf')] = 0

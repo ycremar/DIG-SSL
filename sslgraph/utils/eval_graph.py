@@ -3,7 +3,6 @@ import numpy as np
 import torch.nn as nn
 from sklearn.model_selection import StratifiedKFold
 from torch_geometric.data import DataLoader
-from torch import optim
 
 from sklearn.svm import SVC
 from sklearn import preprocessing
@@ -68,12 +67,12 @@ class EvalUnsupevised(object):
             pred_head: [Optional] Trainable pytoch model. If None, will use linear projection.
         '''
         
-        pretrain_loader = DataLoader(self.dataset, batch_size, shuffle=True)
+        pretrain_loader = DataLoader(self.dataset, self.batch_size, shuffle=True)
         p_optimizer = self.get_optim(self.p_optim)(encoder.parameters(), lr=self.p_lr, 
                                                    weight_decay=self.p_weight_decay)
         
-        encoder = learning_model.train(encoder, pretrain_loader, self.p_optimizer, self.p_epochs)
-        model = PredictionModel(encoder, pred_head, learning_model.dim, self.out_dim)
+        encoder = learning_model.train(encoder, pretrain_loader, p_optimizer, self.p_epoch)
+        model = PredictionModel(encoder, pred_head, learning_model.z_dim, self.out_dim)
         
         test_metrics = []
         val = not (self.epoch_select == 'test_max' or self.epoch_select == 'test_min')
@@ -168,13 +167,12 @@ class EvalUnsupevised(object):
 
 class EvalSemisupevised(object):
     
-    def __init__(self, dataset, label_rate, out_dim, loss=nn.functional.nll_loss, 
+    def __init__(self, dataset, dataset_pretrain, label_rate, out_dim, loss=nn.functional.nll_loss, 
                  epoch_select='test_max', metric='acc', n_folds=10, device=None):
         
-        self.dataset, self.dataset_pretrain = get_dataset(dataset, task="semisupervised")
+        self.dataset, self.dataset_pretrain = dataset, dataset_pretrain
         self.label_rate = label_rate
         self.out_dim = out_dim
-        self.task = task
         self.metric = metric
         self.n_folds = n_folds
         self.device = device
@@ -210,12 +208,12 @@ class EvalSemisupevised(object):
             pred_head: [Optional] Trainable pytoch model. If None, will use linear projection.
         '''
         
-        pretrain_loader = DataLoader(self.dataset_pretrain, batch_size, shuffle=True)
+        pretrain_loader = DataLoader(self.dataset_pretrain, self.batch_size, shuffle=True)
         p_optimizer = self.get_optim(self.p_optim)(encoder.parameters(), lr=self.p_lr, 
                                                    weight_decay=self.p_weight_decay)
         
-        encoder = learning_model.train(encoder, pretrain_loader, self.p_optimizer, self.p_epochs)
-        model = PredictionModel(encoder, pred_head, learning_model.dim, self.out_dim)
+        encoder = learning_model.train(encoder, pretrain_loader, p_optimizer, self.p_epoch)
+        model = PredictionModel(encoder, pred_head, learning_model.z_dim, self.out_dim)
         
         test_metrics = []
         val_losses = []
@@ -224,7 +222,7 @@ class EvalSemisupevised(object):
             k_fold(self.n_folds, self.dataset, self.batch_size, self.label_rate, val, fold_seed))):
             
             fold_model = copy.deepcopy(model)            
-            f_optimizer = self.get_optim(self.f_optim)(model.parameters(), lr=self.f_lr, 
+            f_optimizer = self.get_optim(self.f_optim)(fold_model.parameters(), lr=self.f_lr, 
                                                        weight_decay=self.f_weight_decay)
             for epoch in range(0, self.f_epoch):
                 self.finetune(fold_model, f_optimizer, train_loader)
@@ -319,7 +317,7 @@ class EvalSemisupevised(object):
         
     def get_optim(self, optim):
         
-        optims = {'Adam': optim.Adam}
+        optims = {'Adam': torch.optim.Adam}
         
         return optims[optim]
     
