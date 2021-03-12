@@ -165,6 +165,8 @@ class EvalUnsupevised(object):
         optims = {'SVC': SVC}
         
         return optims[optim]
+    
+    
 
 class EvalSemisupevised(object):
     

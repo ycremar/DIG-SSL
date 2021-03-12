@@ -1,5 +1,6 @@
 import sys, torch
 import torch.nn as nn
+from torch_geometric.data import Batch, Data
 from ssl.contrastive.objectives import NCE_loss, JSE_loss
 
 class Contrastive(nn.Module):
@@ -11,6 +12,7 @@ class Contrastive(nn.Module):
                  node_level = False,
                  proj = None,
                  proj_n = None,
+                 neg_by_crpt = False,
                  device = None):
         """
         Args:
@@ -19,18 +21,23 @@ class Contrastive(nn.Module):
             graph_level: Boolean. Whether to include graph-level embedding for contrast.
             node_level: Boolean. Whether to include node-level embedding for contrast.
             proj: String, function or None. Projection head for graph-level representation. 
-                  If string, should be one of 'linear' and 'MLP'.
+                If string, should be one of 'linear' and 'MLP'.
             proj_n: String, function or None. Projection head for node-level representations. 
-                    If string, should be one of 'linear' and 'MLP'. Required when node_level
-                    is True.
+                If string, should be one of 'linear' and 'MLP'. Required when node_level
+                is True.
+            neg_by_crpt: Boolean. If True, obtain negative samples by performing corruption.
+                Otherwise, consider pairs of different graph samples as negative pairs.
+                Should always be False when using InfoNCE objective.
         """
         assert node_level is not None or graph_level is not None
+        assert not (objective=='NCE' and neg_by_crpt)
 
         self.loss_fn = self._get_loss(objective)
         self.views_fn = views_fn # fn: (batched) graph -> graph
         self.device = device
         self.node_level = node_level
         self.graph_level = graph_level
+        self.neg_by_crpt = neg_by_crpt
         self.z_dim = z_dim
         
         if graph_level and self.proj is not None:
@@ -54,9 +61,11 @@ class Contrastive(nn.Module):
         """
         Args:
             encoder: Trainable pytorch model or list of models. Callable with inputs (X, edge_index, batch).
-                    If node_level is False, return tensor of shape [n_graphs, z_dim]. Else, return tuple of
-                    shape ([n_graphs, z_dim], [n_nodes, z'_dim]) representing graph-level and node-level embeddings.
-            dataloader: Dataloader.
+                If node_level is False, return tensor of shape [n_graphs, z_dim]. Else, return tuple of
+                shape ([n_graphs, z_dim], [n_nodes, z'_dim]) representing graph-level and node-level embeddings.
+            dataloader: Dataloader for contrastive training.
+            optimizer: Torch optimizer.
+            epochs: Integer.
         """
         
         if self.node_level and self.graph_level:
@@ -84,10 +93,10 @@ class Contrastive(nn.Module):
                 zs = []
                 for v_fn, enc in zip(self.views_fn, encoders):
                     view = v_fn(data).to(torch.device(self.device))
-                    z = enc(view)
+                    z = self._get_embed(enc, view)
                     zs.append(self.proj_head_g(z))
 
-                loss = self.loss_fn(zs)
+                loss = self.loss_fn(zs, neg_by_crpt=self.neg_by_crpt)
                 loss.backward()
                 optimizer.step()
 
@@ -109,12 +118,13 @@ class Contrastive(nn.Module):
             for data in data_loader:
                 optimizer.zero_grad()
                 zs_n = []
-                for v_fn, encoder in zip(self.views_fn, encoders):            
+                for v_fn, enc in zip(self.views_fn, encoders):            
                     view = v_fn(data).to(torch.device(self.device))
-                    z_n = encoder(view)
+                    z_n = self._get_embed(enc, view)
                     zs_n.append(self.proj_head_n(z_n))
 
-                loss = self.loss_fn(zs_g=None, zs_n=zs_n, batch=data.batch)
+                loss = self.loss_fn(zs_g=None, zs_n=zs_n, batch=data.batch, 
+                                    neg_by_crpt=self.neg_by_crpt)
                 loss.backward()
                 optimizer.step()
             
@@ -137,18 +147,51 @@ class Contrastive(nn.Module):
             for data in data_loader:
                 optimizer.zero_grad()
                 zs_n, zs_g = [], []
-                for v_fn, encoder in zip(self.views_fn, encoders):            
+                for v_fn, enc in zip(self.views_fn, encoders):            
                     view = v_fn(data).to(torch.device(self.device))
-                    z_g, z_n = encoder(view)
+                    z_g, z_n = self._get_embed(enc, view)
                     zs_n.append(self.proj_head_n(z_n))
                     zs_g.append(self.proj_head_g(z_g))
 
-                loss = self.loss_fn(zs_g, zs_n=zs_n, batch=data.batch)
+                loss = self.loss_fn(zs_g, zs_n=zs_n, batch=data.batch, 
+                                    neg_by_crpt=self.neg_by_crpt)
                 loss.backward()
                 optimizer.step()
             
         return encoder, (self.proj_head_n, self.proj_head_g)
     
+    def _get_embed(self, enc, view):
+        
+        if self.neg_by_crpt:
+            view_crpt = self._corrupt_graph(view)
+            if self.node_level and self.graph_level:
+                z_g, z_n = enc(view)
+                z_g_crpt, z_n_crpt = enc(view_crpt)
+                z = (torch.cat([z_g, z_g_crpt], 0),
+                     torch.cat([z_n, z_n_crpt], 0))
+            else:
+                z = enc(view)
+                z_crpt = enc(view_crpt)
+                z = torch.cat([z, z_crpt], 0)
+        else:
+            z = enc(view)
+        
+        return z
+                
+    
+    def _corrupt_graph(self, view):
+        
+        data_list = view.to_data_list()
+        crpt_list = []
+        for data in data_list:
+            n_nodes = view.x.shape[0]
+            perm = torch.randperm(n_nodes).long()
+            crpt_x = view.x[perm]
+            crpt_list.append(Data(x=crpt_x, edge_index=view.edge_index))
+        view_crpt = Batch.from_data_list(crpt_list)
+
+        return view_crpt
+        
     
     def _get_proj(self, proj_head, z_dim):
         
