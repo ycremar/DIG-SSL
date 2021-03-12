@@ -37,10 +37,10 @@ def get_dataset(name, task, sparse=True, feat_str="deg+ak3+reall", root=None):
 
         pre_transform = FeatureExpander(degree=degree, onehot_maxdeg=onehot_maxdeg, AK=0).transform
 
-        dataset = TUDatasetExt("./dataset/", name, task, pre_transform=pre_transform, use_node_attr=True,
+        dataset = TUDatasetExt("./semi_dataset/dataset", name, task, pre_transform=pre_transform, use_node_attr=True,
                                processed_filename="data_%s.pt" % feat_str)
 
-        dataset_pretrain = TUDatasetExt("./pretrain_dataset/", name, task, pre_transform=pre_transform,
+        dataset_pretrain = TUDatasetExt("./semi_dataset/pretrain_dataset/", name, task, pre_transform=pre_transform,
                                         use_node_attr=True,
                                         processed_filename="data_%s.pt" % feat_str)
 
