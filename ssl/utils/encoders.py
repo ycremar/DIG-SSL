@@ -16,7 +16,7 @@ class Encoder(torch.nn.Module):
     def __init__(self, input_dim, hidden_dim, n_layers=5,
                  pool='sum', gnn='gin', bn=False, act='relu',
                  bias=True, xavier=True, node_level=False, graph_level=True,
-                 dataset=None):
+                 xg_dim=None):
         super(Encoder, self).__init__()
 
         if gnn == 'gin':
@@ -24,10 +24,7 @@ class Encoder(torch.nn.Module):
         elif gnn == 'gcn':
             self.encoder = GCN(input_dim, hidden_dim, n_layers, pool, bn, act, bias, xavier)
         elif gnn == 'resgcn':
-            if dataset is not None:
-                self.encoder = ResGCN(dataset, hidden_dim, num_conv_layers=n_layers, global_pool=pool)
-            else
-                raise ValueError("dataset can not be none")
+            self.encoder = ResGCN(hidden_dim, num_conv_layers=n_layers, global_pool=pool, xg_dim=xg_dim)
 
         self.node_level = node_level
         self.graph_level = graph_level
@@ -233,10 +230,10 @@ class ResGCNConv(MessagePassing):
         return '{}({}, {})'.format(self.__class__.__name__, self.in_channels, self.out_channels)
 
 class ResGCN(torch.nn.Module):
-    def __init__(self, dataset, hidden_dim, 
+    def __init__(self, hidden_dim, 
                  num_feat_layers=1, 
                  num_conv_layers=3,
-                 num_fc_layers=2, 
+                 num_fc_layers=2, xg_dim=None,
                  gfn=False, collapse=False, residual=False,
                  global_pool="sum", dropout=0, dge_norm=True):
 
@@ -254,10 +251,10 @@ class ResGCN(torch.nn.Module):
         self.dropout = dropout
         GConv = partial(ResGCNConv, edge_norm=edge_norm, gfn=gfn)
 
-        if "xg" in dataset[0]:  # Utilize graph level features.
+        if xg_dim is not None:  # Utilize graph level features.
             self.use_xg = True
-            self.bn1_xg = BatchNorm1d(dataset[0].xg.size(1))
-            self.lin1_xg = Linear(dataset[0].xg.size(1), hidden_dim)
+            self.bn1_xg = BatchNorm1d(xg_dim)
+            self.lin1_xg = Linear(xg_dim, hidden_dim)
             self.bn2_xg = BatchNorm1d(hidden_dim)
             self.lin2_xg = Linear(hidden_dim, hidden_dim)
         else:
@@ -300,14 +297,6 @@ class ResGCN(torch.nn.Module):
                 self.convs.append(GConv(hidden_dim, hidden_dim))
             self.bn_hidden = BatchNorm1d(hidden_dim)
 
-            # linear head 
-            # self.bns_fc = torch.nn.ModuleList()
-            # self.lins = torch.nn.ModuleList()
-            # for i in range(num_fc_layers - 1):
-            #     self.bns_fc.append(BatchNorm1d(hidden_dim))
-            #     self.lins.append(Linear(hidden_dim, hidden_dim))
-            # self.lin_class = Linear(hidden_dim, dataset.num_classes)
-
         # BN initialization.
         for m in self.modules():
             if isinstance(m, (torch.nn.BatchNorm1d)):
@@ -317,7 +306,7 @@ class ResGCN(torch.nn.Module):
     def forward(self, data):
         x, edge_index, batch = data.x, data.edge_index, data.batch
         if self.use_xg:
-            # xg is (batch_size x its feat dim)
+            # xg is of shape [n_graphs, feat_dim]
             xg = self.bn1_xg(data.xg)
             xg = F.relu(self.lin1_xg(xg))
             xg = self.bn2_xg(xg)
@@ -335,13 +324,7 @@ class ResGCN(torch.nn.Module):
         x = self.global_pool(x * gate, batch)
         x = x if xg is None else x + xg
         
-        # for i, lin in enumerate(self.lins):
-        #     x_ = self.bns_fc[i](x)
-        #     x_ = F.relu(lin(x_))
-        #     x = x + x_ if self.fc_residual else x_
-        # x = self.bn_hidden(x)
         if self.dropout > 0:
             x = F.dropout(x, p=self.dropout, training=self.training)
-        # x = self.lin_class(x)
-        # return F.log_softmax(x, dim=-1)
+
         return x
