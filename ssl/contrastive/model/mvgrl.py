@@ -43,8 +43,8 @@ class MVGRL_enc(nn.Module):
     
 class MVGRL(Contrastive):
     
-    def __init__(self, dim, diffusion_type='ppr', alpha=None, 
-                 t=None, graph_level=True, node_level=False, subgraph=False):
+    def __init__(self, dim, diffusion_type='ppr', alpha=None, t=None, 
+                 graph_level=True, node_level=False, subgraph=False, neg_by_crpt=False):
         '''
         Args:
             diffusion_type: String. Diffusion instantiation mode with two options:
@@ -68,6 +68,7 @@ class MVGRL(Contrastive):
                                       dim=dim,
                                       proj='MLP',
                                       proj_n='MLP',
+                                      neg_by_crpt=neg_by_crpt
                                       device=device)
         
     def train(self, encoders, data_loader, optimizer, epochs):
