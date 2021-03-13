@@ -7,7 +7,7 @@ from sslgraph.contrastive.views_fn import diffusion, diffusion_with_sample
 class MVGRL_enc(nn.Module):
     '''
         MVGRL includes projection heads and combines two views and encoders
-        when inferencing representation
+        when inferencing graph-level representation.
     '''
     def __init__(self, encoder_0, encoder_1, 
                  proj, proj_n, views_fn, 
@@ -44,7 +44,7 @@ class MVGRL_enc(nn.Module):
 class MVGRL(Contrastive):
     
     def __init__(self, dim, diffusion_type='ppr', alpha=None, t=None, 
-                 graph_level=True, node_level=False, subgraph=False, neg_by_crpt=False):
+                 graph_level_output=True, node_level_output=False):
         '''
         Args:
             diffusion_type: String. Diffusion instantiation mode with two options:
@@ -55,11 +55,8 @@ class MVGRL(Contrastive):
             subgraph: Boolean. Whether to sample subgraph from a large graph. 
                 Set to True for node-level tasks on large graphs.
         '''
-        if not subgraph:
-            views_fn = [lambda x: x,
-                        diffusion(mode=diffusion_type, alpha=alpha, t=t)]
-        else:
-            views_gn = [diffusion_with_sample, None]
+        views_fn = [lambda x: x,
+                    diffusion(mode=diffusion_type, alpha=alpha, t=t)]
         self.graph_level = graph_level
         self.node_level = node_level
         super(MVGRL, self).__init__(objective='JSE',
@@ -68,11 +65,46 @@ class MVGRL(Contrastive):
                                       dim=dim,
                                       proj='MLP',
                                       proj_n='MLP',
-                                      neg_by_crpt=neg_by_crpt
                                       device=device)
         
     def train(self, encoders, data_loader, optimizer, epochs):
         encs, (proj, proj_n) = super(MVGRL, self).train(encoders, data_loader, optimizer, epochs)
         encoder = MVGRL_enc(encs[0], enc[1], proj, proj_n, self.view_fn, self.graph_level, self.node_level)
+        
+        return encoder
+    
+    
+    
+class NodeMVGRL(Contrastive):
+    
+    def __init__(self, dim, diffusion_type='ppr', alpha=None, t=None, 
+                 graph_level_output=False, node_level_output=True):
+        '''
+        Args:
+            diffusion_type: String. Diffusion instantiation mode with two options:
+                'ppr': Personalized PageRank
+                'heat': heat kernel
+            alpha: Float in (0,1). Teleport probability in a random walk.
+            t: Integer. Diffusion time.
+            subgraph: Boolean. Whether to sample subgraph from a large graph. 
+                Set to True for node-level tasks on large graphs.
+        '''
+        views_gn = [diffusion_with_sample, None]
+        self.graph_level = graph_level
+        self.node_level = node_level
+        
+        super(MVGRL, self).__init__(objective='JSE',
+                                    views_fn=views_fn,
+                                    node_level=True,
+                                    dim=dim,
+                                    proj=nn.Sigmoid(),
+                                    proj_n='Linear',
+                                    neg_by_crpt=True,
+                                    device=device)
+        
+    def train(self, encoders, data_loader, optimizer, epochs):
+        encs, (proj, proj_n) = super(MVGRL, self).train(encoders, data_loader, optimizer, epochs)
+        encoder = MVGRL_enc(encs[0], enc[1], (lambda x: x), (lambda x: x), 
+                            self.view_fn, self.graph_level, self.node_level)
         
         return encoder

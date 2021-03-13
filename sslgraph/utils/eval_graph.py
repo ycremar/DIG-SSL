@@ -89,10 +89,10 @@ class EvalUnsupevised(object):
         test_metrics = torch.tensor(test_metrics)
         test_metrics = test_metrics.view(self.n_folds, self.f_epoch)
 
-        if epoch_select == 'test_max':
+        if self.epoch_select == 'test_max':
             _, selection =  test_metrics.mean(dim=0).max(dim=0)
             selection = selection.repeat(self.n_folds)
-        elif epoch_select == 'test_min':
+        elif self.epoch_select == 'test_min':
             _, selection =  test_metrics.mean(dim=0).min(dim=0)
             selection = selection.repeat(self.n_folds)
         else:
@@ -175,16 +175,19 @@ class EvalSemisupevised(object):
         self.out_dim = out_dim
         self.metric = metric
         self.n_folds = n_folds
-        self.device = device
         self.loss = loss
         self.epoch_select = epoch_select
+        if device is None:
+            self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        else:
+            self.device = device
         
         # Use default config if not further specified
         self.setup_train_config()
         
         
     def setup_train_config(self, batch_size = 128,
-                           p_optim = 'Adam', p_lr = 0.0001, p_weight_decay = 0, p_epoch = 100,
+                           p_optim = 'Adam', p_lr = 0.0001, p_weight_decay = 0, p_epoch = 0,
                            f_optim = 'Adam', f_lr = 0.001, f_weight_decay = 0, f_epoch = 100):
         
         self.batch_size = batch_size
@@ -207,19 +210,18 @@ class EvalSemisupevised(object):
             encoder: Trainable pytorch model or list of models.
             pred_head: [Optional] Trainable pytoch model. If None, will use linear projection.
         '''
-        
         pretrain_loader = DataLoader(self.dataset_pretrain, self.batch_size, shuffle=True)
         p_optimizer = self.get_optim(self.p_optim)(encoder.parameters(), lr=self.p_lr, 
                                                    weight_decay=self.p_weight_decay)
         
         encoder = learning_model.train(encoder, pretrain_loader, p_optimizer, self.p_epoch)
-        model = PredictionModel(encoder, pred_head, learning_model.z_dim, self.out_dim)
+        model = PredictionModel(encoder, pred_head, learning_model.z_dim, self.out_dim).to(self.device)
         
         test_metrics = []
         val_losses = []
         val = not (self.epoch_select == 'test_max' or self.epoch_select == 'test_min')
-        for fold, (train_loader, test_loader, val_loader) in enumerate(zip(
-            k_fold(self.n_folds, self.dataset, self.batch_size, self.label_rate, val, fold_seed))):
+        for fold, train_loader, test_loader, val_loader in \
+            k_fold(self.n_folds, self.dataset, self.batch_size, self.label_rate, val, fold_seed):
             
             fold_model = copy.deepcopy(model)            
             f_optimizer = self.get_optim(self.f_optim)(fold_model.parameters(), lr=self.f_lr, 
@@ -228,16 +230,17 @@ class EvalSemisupevised(object):
                 self.finetune(fold_model, f_optimizer, train_loader)
                 val_losses.append(self.eval_loss(fold_model, val_loader))
                 test_metrics.append(self.eval_metric(fold_model, test_loader))
+            print(max(test_metrics))
         
 
         val_losses, test_metrics = torch.tensor(val_losses), torch.tensor(test_metrics)
         val_losses = val_losses.view(self.n_folds, self.f_epoch)
         test_metrics = test_metrics.view(self.n_folds, self.f_epoch)
 
-        if epoch_select == 'test_max':
+        if self.epoch_select == 'test_max':
             _, selection =  test_metrics.mean(dim=0).max(dim=0)
             selection = selection.repeat(self.n_folds)
-        elif epoch_select == 'test_min':
+        elif self.epoch_select == 'test_min':
             _, selection =  test_metrics.mean(dim=0).min(dim=0)
             selection = selection.repeat(self.n_folds)
         else:
@@ -274,7 +277,7 @@ class EvalSemisupevised(object):
         correct = 0
         for data in loader:
             optimizer.zero_grad()
-            data = data.to(torch.device('cuda:' + str(self.device)))
+            data = data.to(self.device)
             out = model(data)
             loss = self.loss(out, data.y.view(-1))
             pred = out.max(1)[1]
@@ -292,7 +295,7 @@ class EvalSemisupevised(object):
 
         loss = 0
         for data in loader:
-            data = data.to(torch.device('cuda:' + str(self.device)))
+            data = data.to(self.device)
             with torch.no_grad():
                 pred = model(data)
             loss += self.loss(pred, data.y.view(-1), reduction='sum').item()
@@ -307,7 +310,7 @@ class EvalSemisupevised(object):
 
         correct = 0
         for data in loader:
-            data = data.to(torch.device('cuda:' + str(self.device)))
+            data = data.to(self.device)
             with torch.no_grad():
                 pred = model(data).max(1)[1]
             correct += pred.eq(data.y.view(-1)).sum().item()
@@ -341,16 +344,16 @@ def k_fold(n_folds, dataset, batch_size, label_rate=1, val=False, seed=12345):
     else:
         val_indices = [test_indices[i] for i in range(n_folds)]
 
-    if self.label_rate < 1:
+    if label_rate < 1:
         label_skf = StratifiedKFold(int(1.0/label_rate), shuffle=True, random_state=seed)
-        for i in range(folds):
-            train_mask = torch.ones(len(self.dataset), dtype=torch.uint8)
+        for i in range(n_folds):
+            train_mask = torch.ones(len(dataset), dtype=torch.uint8)
             train_mask[test_indices[i].long()] = 0
             train_mask[val_indices[i].long()] = 0
             idx_train = train_mask.nonzero(as_tuple=False).view(-1)
 
             for _, idx in label_skf.split(torch.zeros(idx_train.size()[0]), 
-                                          self.dataset.data.y[idx_train]):
+                                          dataset.data.y[idx_train]):
                 idx_train = idx_train[idx]
                 break
 
@@ -362,9 +365,10 @@ def k_fold(n_folds, dataset, batch_size, label_rate=1, val=False, seed=12345):
             train_mask[val_indices[i].long()] = 0
             idx_train = train_mask.nonzero(as_tuple=False).view(-1)
             train_indices.append(idx_train)
+            
+    for i in range(n_folds):
+        train_loader = DataLoader(dataset[train_indices[i]], batch_size, shuffle=True)
+        test_loader = DataLoader(dataset[test_indices[i]], batch_size, shuffle=False)
+        val_loader = DataLoader(dataset[val_indices[i]], batch_size, shuffle=False)
 
-    train_loader = DataLoader(dataset[train_indices], batch_size, shuffle=True)
-    test_loader = DataLoader(dataset[test_indices], batch_size, shuffle=False)
-    val_loader = DataLoader(dataset[val_indices], batch_size, shuffle=False)
-
-    return train_loader, test_loader, val_loader
+        yield i, train_loader, test_loader, val_loader
