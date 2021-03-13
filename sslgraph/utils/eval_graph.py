@@ -224,6 +224,7 @@ class EvalSemisupevised(object):
             k_fold(self.n_folds, self.dataset, self.batch_size, self.label_rate, val, fold_seed):
             
             fold_model = copy.deepcopy(model)            
+#             fold_model = model.clone()
             f_optimizer = self.get_optim(self.f_optim)(fold_model.parameters(), lr=self.f_lr, 
                                                        weight_decay=self.f_weight_decay)
             for epoch in range(0, self.f_epoch):
@@ -273,19 +274,18 @@ class EvalSemisupevised(object):
     
     def finetune(self, model, optimizer, loader):
         
+        model.train()
         total_loss = 0
         correct = 0
-        for data in loader:
-            optimizer.zero_grad()
-            data = data.to(self.device)
-            out = model(data)
-            loss = self.loss(out, data.y.view(-1))
-            pred = out.max(1)[1]
-            correct += pred.eq(data.y.view(-1)).sum().item()
-            loss.backward()
-            optimizer.step()
-            
-        return correct / len(loader.dataset)
+        for epoch in range(self.f_epoch):
+            for data in loader:
+                optimizer.zero_grad()
+                data = data.to(self.device)
+                out = model(data)
+                loss = self.loss(out, data.y.view(-1))
+                pred = out.max(1)[1]
+                loss.backward()
+                optimizer.step()
     
     
     def eval_loss(self, model, loader, eval_mode=True):

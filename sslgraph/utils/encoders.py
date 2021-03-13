@@ -189,7 +189,7 @@ class ResGCNConv(MessagePassing):
         assert edge_weight.size(0) == edge_index.size(1)
 
         edge_index, edge_weight = remove_self_loops(edge_index, edge_weight)
-        edge_index = add_self_loops(edge_index, num_nodes=num_nodes)
+        edge_index, _ = add_self_loops(edge_index, num_nodes=num_nodes)
         # Add edge_weight for loop edges.
         loop_weight = torch.full((num_nodes, ),
                                  1 if not improved else 2,
@@ -331,4 +331,4 @@ class ResGCN(torch.nn.Module):
         if self.dropout > 0:
             x = F.dropout(x, p=self.dropout, training=self.training)
 
-        return x
+        return x, None

@@ -43,7 +43,7 @@ class MVGRL_enc(nn.Module):
     
 class MVGRL(Contrastive):
     
-    def __init__(self, dim, diffusion_type='ppr', alpha=None, t=None, 
+    def __init__(self, dim, diffusion_type='ppr', alpha=0.2, t=5, 
                  graph_level_output=True, node_level_output=False):
         '''
         Args:
@@ -55,12 +55,12 @@ class MVGRL(Contrastive):
             subgraph: Boolean. Whether to sample subgraph from a large graph. 
                 Set to True for node-level tasks on large graphs.
         '''
-        views_fn = [lambda x: x,
-                    diffusion(mode=diffusion_type, alpha=alpha, t=t)]
+        self.views_fn = [lambda x: x,
+                         diffusion(mode=diffusion_type, alpha=alpha, t=t)]
         self.graph_level = graph_level
         self.node_level = node_level
         super(MVGRL, self).__init__(objective='JSE',
-                                      views_fn=views_fn,
+                                      views_fn=self.views_fn,
                                       node_level=True,
                                       dim=dim,
                                       proj='MLP',
@@ -69,6 +69,8 @@ class MVGRL(Contrastive):
         
     def train(self, encoders, data_loader, optimizer, epochs):
         encs, (proj, proj_n) = super(MVGRL, self).train(encoders, data_loader, optimizer, epochs)
+        
+        # mvgrl for graph-level tasks follows InfoGraph, including the projection heads after pretraining
         encoder = MVGRL_enc(encs[0], enc[1], proj, proj_n, self.view_fn, self.graph_level, self.node_level)
         
         return encoder
@@ -89,7 +91,7 @@ class NodeMVGRL(Contrastive):
             subgraph: Boolean. Whether to sample subgraph from a large graph. 
                 Set to True for node-level tasks on large graphs.
         '''
-        views_gn = [diffusion_with_sample, None]
+        views_fn = [diffusion_with_sample, None]
         self.graph_level = graph_level
         self.node_level = node_level
         
@@ -104,7 +106,10 @@ class NodeMVGRL(Contrastive):
         
     def train(self, encoders, data_loader, optimizer, epochs):
         encs, (proj, proj_n) = super(MVGRL, self).train(encoders, data_loader, optimizer, epochs)
+        views_fn = [lambda x: x,
+                    diffusion(mode=diffusion_type, alpha=alpha, t=t)]
+        # mvgrl for node-level tasks follows DGI, excluding the projection heads after pretraining
         encoder = MVGRL_enc(encs[0], enc[1], (lambda x: x), (lambda x: x), 
-                            self.view_fn, self.graph_level, self.node_level)
+                            views_fn, self.graph_level, self.node_level)
         
         return encoder
