@@ -1,6 +1,7 @@
 import torch
 import torch.nn.functional as F
 import itertools
+import torch.nn as nn
 
 
 def JSE_loss(zs, zs_n=None, batch=None, sigma=None, neg_by_crpt=False):
@@ -43,22 +44,31 @@ def JSE_loss(zs, zs_n=None, batch=None, sigma=None, neg_by_crpt=False):
                 if sigma[i][j]:
                     loss += jse(zs[i], zs[j])
             return loss
-    
-    
+
+
 def JSE_local_global_negative_paired(z_g, z_n, batch):
-    
-    num_graphs = z_g.shape[0]/2
-    num_nodes = z_n.shape[0]/2
+    '''
+    Args:
+        z_g: of size [8, 512]
+        z_n: of size [16000, 512]
+    '''
+    num_graphs = int(z_g.shape[0]/2)  # 4
+    num_nodes = int(z_n.shape[0]/2) # 8000
     z_g, _ = torch.split(z_g, num_graphs)
-    z_n, z_n_crpt = torch.split(z_n, num_graphs)
-    
-    d_pos = torch.matmul(z_g, z_n.t())
-    d_neg = torch.matmul(z_g, z_n_crpt.t())
-    logit = torch.cat((d_pos, d_neg), 1)
-    lb_pos = torch.ones((num_graphs, num_nodes))
-    lb_neg = torch.zeros((num_graphs, num_nodes))
-    lb = torch.cat((d_pos, d_neg), 1)
-    
+    z_n, z_n_crpt = torch.split(z_n, num_nodes)
+
+    num_sample_nodes = int(num_nodes / num_graphs)
+    z_n = torch.split(z_n, num_sample_nodes)
+    z_n_crpt = torch.split(z_n_crpt, num_sample_nodes)
+
+    d_pos = torch.cat([torch.matmul(z_g[i], z_n[i].t()) for i in range(num_graphs)])  # [1, 8000]
+    d_neg = torch.cat([torch.matmul(z_g[i], z_n_crpt[i].t()) for i in range(num_graphs)])  # [1, 8000]
+
+    logit = torch.unsqueeze(torch.cat((d_pos, d_neg)), 0)  # [1, 16000]
+    lb_pos = torch.ones((1, int(num_graphs * num_nodes / 2)))  # [1, 8000]
+    lb_neg = torch.zeros((1, int(num_graphs * num_nodes / 2)))  # [1, 8000]
+    lb = torch.cat((lb_pos, lb_neg), 1)
+
     b_xent = nn.BCEWithLogitsLoss()
     loss = b_xent(logit, lb) * 0.5 # following mvgrl-node
     return loss

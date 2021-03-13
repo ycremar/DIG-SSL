@@ -148,24 +148,30 @@ def diffusion_with_sample(sample_size=2000, batch_size=4, mode='ppr', alpha=0.2,
         else:
             raise Exception("Must choose one diffusion instantiation mode from 'ppr' and 'heat'!")
 
-        dlist_orig = []
-        dlist_diff = []
+        dlist_orig_x = []
+        dlist_diff_x = []
+        # dlist_orig_shuf = []
+        # dlist_diff_shuf = []
         drop_num = node_num - sample_size
+        # idx_shuffle = np.random.permutation(sample_size)
         for b in range(batch_size):
             idx_drop = np.random.choice(node_num, drop_num, replace=False)
             idx_nondrop = [n for n in range(node_num) if not n in idx_drop]
 
             sample_orig_adj = orig_adj.copy()
-            sample_orig_adj[idx_drop, :] = 0
-            sample_orig_adj[:, idx_drop] = 0
+            sample_orig_adj = sample_orig_adj[idx_nondrop, :][:, idx_nondrop]
 
             sample_diff_adj = diff_adj.copy()
-            sample_diff_adj[idx_drop, :] = 0
-            sample_diff_adj[:, idx_drop] = 0
+            sample_diff_adj = sample_diff_adj[idx_nondrop, :][:, idx_nondrop]
 
-            dlist_orig.append(Data(x=data.x[idx_nondrop], edge_index=dense_to_sparse(sample_orig_adj)[0]))
-            dlist_diff.append(Data(x=data.x[idx_nondrop], edge_index=dense_to_sparse(sample_diff_adj)[0]))
+            sample_orig_x = data.x[idx_nondrop]
+            # sample_shuffle_x = sample_orig_x[idx_shuffle, :]
 
-        return (Batch.from_data_list(dlist_orig), Batch.from_data_list(dlist_diff))
+            dlist_orig_x.append(Data(x=sample_orig_x, edge_index=dense_to_sparse(sample_orig_adj)[0]))
+            dlist_diff_x.append(Data(x=sample_orig_x, edge_index=dense_to_sparse(sample_diff_adj)[0]))
+            # dlist_orig_shuf.append(Data(x=sample_shuffle_x, edge_index=dense_to_sparse(sample_orig_adj)[0]))
+            # dlist_diff_shuf.append(Data(x=sample_shuffle_x, edge_index=dense_to_sparse(sample_diff_adj)[0]))
+
+        return (Batch.from_data_list(dlist_orig_x), Batch.from_data_list(dlist_diff_x))
 
     return views_fn
