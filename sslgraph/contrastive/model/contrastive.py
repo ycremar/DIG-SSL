@@ -96,7 +96,7 @@ class Contrastive(nn.Module):
         self.proj_head_g.train()
         with trange(epochs) as t:
             for epoch in t:
-                t.set_description('Epoch %d' % (epoch+1))
+                t.set_description('Pretraining: epoch %d' % (epoch+1))
                 for data in data_loader:
                     optimizer.zero_grad()
                     if None in self.views_fn: 
@@ -136,7 +136,7 @@ class Contrastive(nn.Module):
         self.proj_head_n.train()
         with trange(epochs) as t:
             for epoch in t:
-                t.set_description('Epoch %d' % (epoch+1))
+                t.set_description('Pretraining: epoch %d' % (epoch+1))
                 for data in data_loader:
                     optimizer.zero_grad()
                     if None in self.views_fn:
@@ -177,7 +177,7 @@ class Contrastive(nn.Module):
         self.proj_head_g.train()
         with trange(epochs) as t:
             for epoch in t:
-                t.set_description('Epoch %d' % (epoch+1))
+                t.set_description('Pretraining: epoch %d' % (epoch+1))
                 for data in data_loader:
                     optimizer.zero_grad()
                     if None in self.views_fn:

@@ -327,7 +327,7 @@ class ResGCN(torch.nn.Module):
         gate = 1 if self.gating is None else self.gating(x)
         x = self.global_pool(x * gate, batch)
         x = x if xg is None else x + xg
-        
+        x = self.bn_hidden(x)
         if self.dropout > 0:
             x = F.dropout(x, p=self.dropout, training=self.training)
 
