@@ -1,7 +1,7 @@
 import torch
 import numpy as np
 from torch_geometric.utils import to_dense_adj, dense_to_sparse
-from scipy.linalg import fractional_matrix_power, inv
+from sklearn.preprocessing import MinMaxScaler
 from torch_geometric.data import Batch, Data
 
 
@@ -67,21 +67,21 @@ def diffusion(mode='ppr', alpha=0.2, t=5):
     '''
     def do_trans(data):
         node_num, _ = data.x.size()
-        adj = to_dense_adj(data.edge_index)[0]
-        d = torch.diag(torch.sum(adj, 1))
+        orig_adj = to_dense_adj(data.edge_index)[0]
+        d = torch.diag(torch.sum(orig_adj, 1))
 
         if mode == 'ppr':
             dinv = torch.inverse(torch.sqrt(d))
-            at = torch.matmul(torch.matmul(dinv, adj), dinv)
-            new_adj = alpha * torch.inverse((torch.eye(adj.shape[0]) - (1 - alpha) * at))
+            at = torch.matmul(torch.matmul(dinv, orig_adj), dinv)
+            diff_adj = alpha * torch.inverse((torch.eye(orig_adj.shape[0]) - (1 - alpha) * at))
 
         elif mode == 'heat':
-            new_adj = torch.exp(t * (torch.matmul(adj, torch.inverse(d)) - 1))
+            diff_adj = torch.exp(t * (torch.matmul(orig_adj, torch.inverse(d)) - 1))
 
         else:
             raise Exception("Must choose one diffusion instantiation mode from 'ppr' and 'heat'!")
 
-        return Data(x=data.x, edge_index=dense_to_sparse(new_adj)[0])
+        return Data(x=data.x, edge_index=dense_to_sparse(diff_adj)[0])
 
     def views_fn(data):
         '''
@@ -107,7 +107,7 @@ def diffusion(mode='ppr', alpha=0.2, t=5):
     return views_fn
 
 
-def diffusion_with_sample(sample_size=2000, batch_size=4, mode='ppr', alpha=0.2, t=5):
+def diffusion_with_sample(sample_size=2000, batch_size=4, mode='ppr', alpha=0.2, t=5, epsilon=False):
     '''
     Args:
         sample_size: Number of nodes in the sampled subgraoh from a large graph.
@@ -117,6 +117,7 @@ def diffusion_with_sample(sample_size=2000, batch_size=4, mode='ppr', alpha=0.2,
                 'heat': heat kernel
         alpha: Teleport probability in a random walk.
         t: Diffusion time.
+        epsilon (bool): Set true if need to adjust the diffusion matrix with epsilon.
     '''
     def views_fn(data):
         '''
@@ -148,12 +149,20 @@ def diffusion_with_sample(sample_size=2000, batch_size=4, mode='ppr', alpha=0.2,
         else:
             raise Exception("Must choose one diffusion instantiation mode from 'ppr' and 'heat'!")
 
+        if epsilon:
+            epsilons = [1e-5, 1e-4, 1e-3, 1e-2]
+            avg_degree = torch.sum(orig_adj) / orig_adj.shape[0]
+            ep = epsilons[np.argmin([abs(avg_degree - torch.sum(diff_adj >= e) / diff_adj.shape[0]) for e in epsilons])]
+
+            diff_adj[diff_adj < ep] = 0.0
+            scaler = MinMaxScaler()
+            scaler.fit(diff_adj)
+            diff_adj = torch.tensor(scaler.transform(diff_adj))
+
+
         dlist_orig_x = []
         dlist_diff_x = []
-        # dlist_orig_shuf = []
-        # dlist_diff_shuf = []
         drop_num = node_num - sample_size
-        # idx_shuffle = np.random.permutation(sample_size)
         for b in range(batch_size):
             idx_drop = np.random.choice(node_num, drop_num, replace=False)
             idx_nondrop = [n for n in range(node_num) if not n in idx_drop]
@@ -165,13 +174,10 @@ def diffusion_with_sample(sample_size=2000, batch_size=4, mode='ppr', alpha=0.2,
             sample_diff_adj = sample_diff_adj[idx_nondrop, :][:, idx_nondrop]
 
             sample_orig_x = data.x[idx_nondrop]
-            # sample_shuffle_x = sample_orig_x[idx_shuffle, :]
 
             dlist_orig_x.append(Data(x=sample_orig_x, edge_index=dense_to_sparse(sample_orig_adj)[0]))
             dlist_diff_x.append(Data(x=sample_orig_x, edge_index=dense_to_sparse(sample_diff_adj)[0]))
-            # dlist_orig_shuf.append(Data(x=sample_shuffle_x, edge_index=dense_to_sparse(sample_orig_adj)[0]))
-            # dlist_diff_shuf.append(Data(x=sample_shuffle_x, edge_index=dense_to_sparse(sample_diff_adj)[0]))
 
-        return (Batch.from_data_list(dlist_orig_x), Batch.from_data_list(dlist_diff_x))
+        return Batch.from_data_list(dlist_orig_x), Batch.from_data_list(dlist_diff_x)
 
     return views_fn
