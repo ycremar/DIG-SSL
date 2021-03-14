@@ -8,10 +8,10 @@ def random_view(candidates):
     def views_fn(batch_data):
         data_list = batch_data.to_data_list()
         transformed_list = []
-        for data in datalist:
+        for data in data_list:
             view_fn = random.choice(candidates)
             transformed = view_fn(data)
-            transformed_list.append(view_fn(d))
+            transformed_list.append(transformed)
         
         return Batch.from_data_list(transformed_list)
     

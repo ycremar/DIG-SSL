@@ -204,6 +204,7 @@ class Contrastive(nn.Module):
 
         return encoder, (self.proj_head_n, self.proj_head_g)
     
+    
     def _get_embed(self, enc, view):
         
         if self.neg_by_crpt:
