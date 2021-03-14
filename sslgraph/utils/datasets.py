@@ -242,12 +242,24 @@ class TUDatasetExt(InMemoryDataset):
         return data
 
 
+def get_node_dataset(name, task, sparse=True, mode=None):
+    if task == "semisupervised":
+
+        pass
+
+    elif task == "unsupervised":
+        dataset = NodeDataset("./node_dataset/", name=name, mode=mode)
+        return dataset
+
+    else:
+        ValueError("Wrong task name")
+
 
 class NodeDataset(InMemoryDataset):
     def __init__(self,
                  root,
                  name,
-                 sparse,
+                 sparse=True,
                  mode='pretrain'):
 
         super(NodeDataset, self).__init__()
@@ -258,19 +270,13 @@ class NodeDataset(InMemoryDataset):
         self.adj, self.features, self.labels, self.idx_train, self.idx_val, self.idx_test = self.load()
         self.features, _ = self.preprocess_features(self.features)
         self.features = torch.FloatTensor(self.features)
-
-        # nb_nodes = self.features.shape[0]  # node number
-        # ft_size = self.features.shape[1]   # node features dim
         self.nb_classes = self.labels.shape[1]  # classes = 6
-        # self.adj = normalize_adj(self.adj + sp.eye(self.adj.shape[0]))
-        # self.adj = self.adj + sp.eye(self.adj.shape[0]) # remember to add self loop before feeding to model!
 
         if sparse:
             row_idx, col_idx = self.adj.nonzero()
             self.edge_index = np.concatenate((np.expand_dims(col_idx, axis=0), np.expand_dims(row_idx, axis=0)), axis=0)
             self.edge_index = torch.tensor(self.edge_index).long()
         else:
-            # self.adj = (self.adj + sp.eye(self.adj.shape[0])).todense()
             self.adj = self.adj.todense()
             self.adj = torch.FloatTensor(self.adj[np.newaxis])
 
