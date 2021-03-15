@@ -61,8 +61,8 @@ class TUDatasetExt(InMemoryDataset):
     '''
     Used in GraphCL for feature expansion
     '''
-    # url = 'https://ls11-www.cs.tu-dortmund.de/people/morris/graphkerneldatasets'
-    url = 'https://www.chrsmrrs.com/graphkerneldatasets'
+    url = 'https://ls11-www.cs.tu-dortmund.de/staff/morris/graphkerneldatasets'
+#     url = 'https://www.chrsmrrs.com/graphkerneldatasets'
     cleaned_url = ('https://raw.githubusercontent.com/nd7141/graph_datasets/master/datasets')
 
     def __init__(self,

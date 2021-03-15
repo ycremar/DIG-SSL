@@ -41,7 +41,7 @@ class Encoder(torch.nn.Module):
 
 
 class GIN(torch.nn.Module):
-    def __init__(self, feat_dim, hidden_dim, n_layers=5,
+    def __init__(self, feat_dim, hidden_dim, n_layers=3,
                  pool='sum', bn=False, act='relu', bias=True, xavier=True):
         super(GIN, self).__init__()
 
@@ -98,7 +98,7 @@ class GIN(torch.nn.Module):
 
 
 class GCN(torch.nn.Module):
-    def __init__(self, feat_dim, hidden_dim, n_layers=5,
+    def __init__(self, feat_dim, hidden_dim, n_layers=3,
                  pool='sum', bn=False, act='relu', bias=True, xavier=True):
         super(GCN, self).__init__()
 
@@ -300,6 +300,11 @@ class ResGCN(torch.nn.Module):
                 self.bns_conv.append(BatchNorm1d(hidden_dim))
                 self.convs.append(GConv(hidden_dim, hidden_dim))
             self.bn_hidden = BatchNorm1d(hidden_dim)
+            self.bns_fc = torch.nn.ModuleList()
+            self.lins = torch.nn.ModuleList()
+            for i in range(num_fc_layers - 1):
+                self.bns_fc.append(BatchNorm1d(hidden_dim))
+                self.lins.append(Linear(hidden_dim, hidden_dim))
 
         # BN initialization.
         for m in self.modules():
@@ -327,6 +332,12 @@ class ResGCN(torch.nn.Module):
         gate = 1 if self.gating is None else self.gating(x)
         x = self.global_pool(x * gate, batch)
         x = x if xg is None else x + xg
+        
+        for i, lin in enumerate(self.lins):
+            x_ = self.bns_fc[i](x)
+            x_ = F.relu(lin(x_))
+            x = x + x_ if self.fc_residual else x_
+        
         x = self.bn_hidden(x)
         if self.dropout > 0:
             x = F.dropout(x, p=self.dropout, training=self.training)

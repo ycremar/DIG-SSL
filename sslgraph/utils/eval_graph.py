@@ -32,12 +32,14 @@ class LogReg(nn.Module):
 
 class EvalUnsupevised(object):
     
-    def __init__(self, dataset, out_dim, 
+    def __init__(self, dataset, out_dim, classifier='SVC', search=True,
                  epoch_select='test_max', metric='acc', n_folds=10, device=None):
         
         self.dataset = dataset
         self.epoch_select = epoch_select
         self.metric = metric
+        self.classifier = classifier
+        self.search = search
         self.n_folds = n_folds
         self.out_dim = out_dim
         if device is None:
@@ -49,8 +51,7 @@ class EvalUnsupevised(object):
         self.setup_train_config()
 
     def setup_train_config(self, batch_size = 256,
-                           p_optim = 'Adam', p_lr = 0.0001, p_weight_decay = 0, p_epoch = 100,
-                           f_optim = 'SVC', f_search=True):
+                           p_optim = 'Adam', p_lr = 0.01, p_weight_decay = 0, p_epoch = 20):
         
         self.batch_size = batch_size
 
@@ -58,11 +59,8 @@ class EvalUnsupevised(object):
         self.p_lr = p_lr
         self.p_weight_decay = p_weight_decay
         self.p_epoch = p_epoch
-
-        self.f_optim = f_optim
-        self.f_search = f_search
     
-    def evaluate(self, learning_model, encoder, pred_head=None, fold_seed=12345):
+    def evaluate(self, learning_model, encoder, pred_head=None, fold_seed=None):
         '''
         Args:
             learning_model: An object of a contrastive model or a predictive model.
@@ -71,29 +69,36 @@ class EvalUnsupevised(object):
         '''
         
         pretrain_loader = DataLoader(self.dataset, self.batch_size, shuffle=True)
-        p_optimizer = self.get_optim(self.p_optim)(encoder.parameters(), lr=self.p_lr, 
+        if isinstance(encoder, list):
+            params = [{'params': enc.parameters()} for enc in encoder]
+        else:
+            params = encoder.parameters()
+        
+        p_optimizer = self.get_optim(self.p_optim)(params, lr=self.p_lr, 
                                                    weight_decay=self.p_weight_decay)
         
         encoder = learning_model.train(encoder, pretrain_loader, p_optimizer, self.p_epoch)
-        model = PredictionModel(encoder, pred_head, learning_model.z_dim, self.out_dim)
         
         test_scores = []
-        val = not (self.epoch_select == 'test_max' or self.epoch_select == 'test_min')
-        for fold, train_loader, test_loader, val_loader in \
-            k_fold(self.n_folds, self.dataset, self.batch_size, 1, val, fold_seed):
-            fold_model = copy.deepcopy(model)
-            test_score = self.get_optim(self.f_optim)(fold_model, f_optimizer, (train_loader, test_loader))
+        loader = DataLoader(self.dataset, self.batch_size, shuffle=False)
+        embed, lbls = self.get_embed(encoder.to(self.device), loader)
+        lbs = np.array(preprocessing.LabelEncoder().fit_transform(lbls))
+        
+        kf = StratifiedKFold(n_splits=self.n_folds, shuffle=True, random_state=fold_seed)
+        for fold, (train_index, test_index) in enumerate(kf.split(embed, lbls)):
+            test_score = self.get_clf()(embed[train_index], lbls[train_index],
+                                        embed[test_index], lbls[test_index])
             test_scores.append(test_score)
 
         test_scores = torch.tensor(test_scores)
         test_score_mean = test_scores.mean().item()
         test_score_std = test_scores.std().item() 
         
-        return test_acc_mean, test_acc_std
+        return test_score_mean, test_score_std
 
 
     def grid_search(self, learning_model, encoder, pred_head=None, fold_seed=12345,
-                    p_lr_lst=[0.1,0.01,0.001,0.0001], p_epoch_lst=[20,40,60,80,100]):
+                    p_lr_lst=[0.1,0.01,0.001], p_epoch_lst=[20,40,60,80,100]):
         
         acc_m_lst = []
         acc_sd_lst = []
@@ -101,102 +106,92 @@ class EvalUnsupevised(object):
         for p_lr in p_lr_lst:
             for p_epoch in p_epoch_lst:
                 self.setup_train_config(p_lr=p_lr, p_epoch=p_epoch)
-                acc_m, acc_sd = self.evaluate(learning_model, encoder, pred_head, fold_seed)
+                model = copy.deepcopy(learning_model)
+                enc = copy.deepcopy(encoder)
+                acc_m, acc_sd = self.evaluate(model, enc, pred_head, fold_seed)
                 acc_m_lst.append(acc_m)
                 acc_sd_lst.append(acc_sd)
                 paras.append((p_lr, p_epoch))
-        idx = np.argmax(acc_m)
+        idx = np.argmax(acc_m_lst)
+        print('Best paras: %d epoch, lr=%f, acc=%.4f' %(
+            paras[idx][1], paras[idx][0], acc_m_lst[idx]))
         
-        return acc_m[idx], acc_sd[idx], paras[idx]
+        return acc_m_lst[idx], acc_sd_lst[idx], paras[idx]
 
     
-    def svc_clf(self, model, loader):
+    def svc_clf(self, train_embs, train_lbls, test_embs, test_lbls):
 
+        if self.search:
+            params = {'C':[0.001, 0.01,0.1,1,10,100,1000]}
+            classifier = GridSearchCV(SVC(), params, cv=5, scoring='accuracy', verbose=0)
+        else:
+            classifier = SVC(C=10)
+
+        classifier.fit(train_embs, train_lbls)
+        acc = accuracy_score(test_lbls, classifier.predict(test_embs))
+            
+        return acc
+    
+    
+    def log_reg(self, train_embs, train_lbs, test_embs, test_lbls):
+        
+        train_embs, train_lbls = torch.from_numpy(train_embs).cuda(), torch.from_numpy(train_lbls).cuda()
+        test_embs, test_lbls= torch.from_numpy(test_embs).cuda(), torch.from_numpy(test_lbls).cuda()
+
+        log = LogReg(hid_units, nb_classes)
+        log.cuda()
+        opt = torch.optim.Adam(log.parameters(), lr=0.01, weight_decay=0.0)
+
+        best_val = 0
+        test_acc = None
+        for it in range(100):
+            log.train()
+            opt.zero_grad()
+
+            logits = log(train_embs)
+            loss = xent(logits, train_lbls)
+
+            loss.backward()
+            opt.step()
+
+        logits = log(test_embs)
+        preds = torch.argmax(logits, dim=1)
+        acc = torch.sum(preds == test_lbls).float() / test_lbls.shape[0]
+        
+        return acc
+    
+    
+    def get_embed(self, model, loader):
+    
         model.eval()
+        ret, y = [], []
+        with torch.no_grad():
+            for data in loader:
+                y.append(data.y.numpy())
+                data.to(self.device)
+                embed = model(data)
+                ret.append(embed.cpu().numpy())
+
+        ret = np.concatenate(ret, 0)
+        y = np.concatenate(y, 0)
+        return ret, y
         
-        total_acc = 0
-        total_num = 0
-
-        for train_data, test_data in zip(loader):
-
-            train_data = train_data.to(torch.device('cuda:' + str(self.device)))
-            test_data = test_data.to(torch.device('cuda:' + str(self.device)))
-
-            x_train = model(train_data)
-            y_train = preprocessing.LabelEncoder().fit_transform(train_data.y.cpu())
-            x_test = model(test_data)
-            y_test = preprocessing.LabelEncoder().fit_transform(test_data.y.cpu())
-            
-            x_train, y_train = x_train.cpu().detach().numpy(), np.array(y_train)
-            x_test, y_test = x_test.cpu().detach().numpy(), np.array(y_test)
-
-            if self.f_search:
-                params = {'C':[0.001, 0.01,0.1,1,10,100,1000]}
-                classifier = GridSearchCV(SVC(), params, cv=5, scoring='accuracy', verbose=0)
-            else:
-                classifier = SVC(C=10)
-
-            classifier.fit(x_train, y_train)
-            acc = accuracy_score(y_test, classifier.predict(x_test))
-
-            total_acc += acc * x_train.size(0)
-            total_num += x_train.size(0)
-            
-        return total_acc / total_num
-    
-    
-    def log_clf(self, model, loader):
         
-        model.eval()
+    def get_clf(self):
         
-        total_acc = 0
-        total_num = 0
-
-        for train_data, test_data in zip(loader):
-
-            train_data = train_data.to(torch.device('cuda:' + str(self.device)))
-            test_data = test_data.to(torch.device('cuda:' + str(self.device)))
-
-            with torch.no_grad():
-                train_embs, test_embs = model(train_data).detach(), model(test_data).detach()
-                
-            train_lbls = np.array(preprocessing.LabelEncoder().fit_transform(train_data.y.cpu()))
-            test_lbls = np.array(preprocessing.LabelEncoder().fit_transform(test_data.y.cpu()))
-
-            train_lbls, test_lbls= torch.from_numpy(train_lbls).cuda(), torch.from_numpy(test_lbls).cuda()
-
-            log = LogReg(hid_units, nb_classes)
-            log.cuda()
-            opt = torch.optim.Adam(log.parameters(), lr=0.01, weight_decay=0.0)
-
-            best_val = 0
-            test_acc = None
-            for it in range(100):
-                log.train()
-                opt.zero_grad()
-
-                logits = log(train_embs)
-                loss = xent(logits, train_lbls)
-
-                loss.backward()
-                opt.step()
-
-            logits = log(test_embs)
-            preds = torch.argmax(logits, dim=1)
-            acc = torch.sum(preds == test_lbls).float() / test_lbls.shape[0]
-            accs_val.append(acc.item())
-            
-        return total_acc / total_num
-    
-        
-    def get_optim(self, optim):
-        
-        if optim == 'SVC':
+        if self.classifier == 'SVC':
             return self.svc_clf
-        elif optim == 'LogReg':
-            return self.log_clf
+        elif self.classifier == 'LogReg':
+            return self.log_reg
         else:
             return None
+        
+    
+    def get_optim(self, optim):
+        
+        optims = {'Adam': torch.optim.Adam}
+        
+        return optims[optim]
     
 
     
@@ -409,7 +404,6 @@ def k_fold(n_folds, dataset, batch_size, label_rate=1, val=False, seed=12345):
             train_mask[test_indices[i].long()] = 0
             train_mask[val_indices[i].long()] = 0
             idx_train = train_mask.nonzero(as_tuple=False).view(-1)
-
             for _, idx in label_skf.split(torch.zeros(idx_train.size()[0]), 
                                           dataset.data.y[idx_train]):
                 idx_train = idx_train[idx]
@@ -417,7 +411,7 @@ def k_fold(n_folds, dataset, batch_size, label_rate=1, val=False, seed=12345):
 
             train_indices.append(idx_train)
     else:
-        for i in range(folds):
+        for i in range(n_folds):
             train_mask = torch.ones(len(dataset), dtype=torch.uint8)
             train_mask[test_indices[i].long()] = 0
             train_mask[val_indices[i].long()] = 0
@@ -425,6 +419,8 @@ def k_fold(n_folds, dataset, batch_size, label_rate=1, val=False, seed=12345):
             train_indices.append(idx_train)
             
     for i in range(n_folds):
+        if batch_size is None:
+            batch_size = len()
         train_loader = DataLoader(dataset[train_indices[i]], batch_size, shuffle=True)
         test_loader = DataLoader(dataset[test_indices[i]], batch_size, shuffle=False)
         val_loader = DataLoader(dataset[val_indices[i]], batch_size, shuffle=False)

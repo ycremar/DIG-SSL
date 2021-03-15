@@ -15,7 +15,9 @@ class Contrastive(nn.Module):
                  proj=None,
                  proj_n=None,
                  neg_by_crpt=False,
-                 device=None):
+                 device=None,
+                 choice_model='last',
+                 model_path='models'):
         """
         Args:
             objective: String or function. If string, should be one of 'NCE' and 'JSE'.
@@ -44,6 +46,8 @@ class Contrastive(nn.Module):
         self.z_n_dim = z_n_dim
         self.proj = proj
         self.proj_n = proj_n
+        self.choice_model = choice_model
+        self.model_path = model_path
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         
     def train(self, encoder, data_loader, optimizer, epochs):
@@ -57,6 +61,12 @@ class Contrastive(nn.Module):
             optimizer: Torch optimizer.
             epochs: Integer.
         """
+        if self.z_n_dim is None:
+            self.proj_out_dim = self.z_dim
+        else:
+            self.proj_out_dim = self.z_n_dim
+        
+        
         if self.graph_level and self.proj is not None:
             self.proj_head_g = self._get_proj(self.proj, self.z_dim).to(self.device)
             optimizer.add_param_group({"params": self.proj_head_g.parameters()})
@@ -67,15 +77,19 @@ class Contrastive(nn.Module):
             
         if self.node_level and self.proj_n is not None:
             self.proj_head_n = self._get_proj(self.proj_n, self.z_n_dim).to(self.device)
-            optimizer.add_param_group([{"params": self.proj_head_n.parameters()}])
+            optimizer.add_param_group({"params": self.proj_head_n.parameters()})
         elif self.node_level:
             self.proj_head_n = lambda x: x
         else:
             self.proj_head_n = None
         
-        encoder = encoder.to(self.device)
+        if isinstance(encoder, list):
+            encoder = [enc.to(self.device) for enc in encoder]
+        else:
+            encoder = encoder.to(self.device)
+            
         if self.node_level and self.graph_level:
-            return self.train_encoder_node_level(encoder, data_loader, optimizer, epochs)
+            return self.train_encoder_node_graph(encoder, data_loader, optimizer, epochs)
         elif self.graph_level:
             return self.train_encoder_graph(encoder, data_loader, optimizer, epochs)
         else:
@@ -94,8 +108,10 @@ class Contrastive(nn.Module):
             encoders = [encoder]*len(self.views_fn)
 
         self.proj_head_g.train()
+        min_loss = 1e9
         with trange(epochs) as t:
             for epoch in t:
+                epoch_loss = 0.0
                 t.set_description('Pretraining: epoch %d' % (epoch+1))
                 for data in data_loader:
                     optimizer.zero_grad()
@@ -116,8 +132,24 @@ class Contrastive(nn.Module):
                     loss = self.loss_fn(zs, neg_by_crpt=self.neg_by_crpt)
                     loss.backward()
                     optimizer.step()
+                    epoch_loss += loss
                 t.set_postfix(loss='{:.6f}'.format(float(loss)))
                 
+                if self.choice_model == 'best' and epoch_loss < min_loss:
+                    min_loss = epoch_loss
+                    if isinstance(encoder, list):
+                        for i, enc in enumerate(encoder):
+                            torch.save(enc.state_dict(), self.model_path+'/enc%d_best.pkl'%i)
+                    else:
+                        torch.save(encoder.state_dict(), self.model_path+'/enc_best.pkl')
+            
+            if self.choice_model == 'best':
+                if isinstance(encoder, list):
+                    for i, enc in enumerate(encoder):
+                        enc.load_state_dict(torch.load(self.model_path+'/enc%d_best.pkl'%i))
+                else:
+                    encoder.load_state_dict(torch.load(self.model_path+'/enc_best.pkl'))
+
 
         return encoder, self.proj_head_g
 
@@ -134,8 +166,10 @@ class Contrastive(nn.Module):
             encoders = [encoder]*len(self.views_fn)
         
         self.proj_head_n.train()
+        min_loss = 1e9
         with trange(epochs) as t:
             for epoch in t:
+                epoch_loss = 0.0
                 t.set_description('Pretraining: epoch %d' % (epoch+1))
                 for data in data_loader:
                     optimizer.zero_grad()
@@ -157,7 +191,23 @@ class Contrastive(nn.Module):
                                         neg_by_crpt=self.neg_by_crpt)
                     loss.backward()
                     optimizer.step()
+                    epoch_loss += loss
                 t.set_postfix(loss='{:.6f}'.format(float(loss)))
+                
+                if self.choice_model == 'best' and epoch_loss < min_loss:
+                    min_loss = epoch_loss
+                    if isinstance(encoder, list):
+                        for i, enc in enumerate(encoder):
+                            torch.save(enc.state_dict(), self.model_path+'/enc%d_best.pkl'%i)
+                    else:
+                        torch.save(encoder.state_dict(), self.model_path+'/enc_best.pkl')
+            
+            if self.choice_model == 'best':
+                if isinstance(encoder, list):
+                    for i, enc in enumerate(encoder):
+                        enc.load_state_dict(torch.load(self.model_path+'/enc%d_best.pkl'%i))
+                else:
+                    encoder.load_state_dict(torch.load(self.model_path+'/enc_best.pkl'))
             
         return encoder, self.proj_head_n
     
@@ -175,8 +225,10 @@ class Contrastive(nn.Module):
         
         self.proj_head_n.train()
         self.proj_head_g.train()
+        min_loss = 1e9
         with trange(epochs) as t:
             for epoch in t:
+                epoch_loss = 0.0
                 t.set_description('Pretraining: epoch %d' % (epoch+1))
                 for data in data_loader:
                     optimizer.zero_grad()
@@ -200,9 +252,25 @@ class Contrastive(nn.Module):
                                         neg_by_crpt=self.neg_by_crpt)
                     loss.backward()
                     optimizer.step()
+                    epoch_loss += loss
                 t.set_postfix(loss='{:.6f}'.format(float(loss)))
+                
+                if self.choice_model == 'best' and epoch_loss < min_loss:
+                    min_loss = epoch_loss
+                    if isinstance(encoder, list):
+                        for i, enc in enumerate(encoder):
+                            torch.save(enc.state_dict(), self.model_path+'/enc%d_best.pkl'%i)
+                    else:
+                        torch.save(encoder.state_dict(), self.model_path+'/enc_best.pkl')
+            
+            if self.choice_model == 'best':
+                if isinstance(encoder, list):
+                    for i, enc in enumerate(encoder):
+                        enc.load_state_dict(torch.load(self.model_path+'/enc%d_best.pkl'%i))
+                else:
+                    encoder.load_state_dict(torch.load(self.model_path+'/enc_best.pkl'))
 
-        return encoder, (self.proj_head_n, self.proj_head_g)
+        return encoder, (self.proj_head_g, self.proj_head_n)
     
     
     def _get_embed(self, enc, view):
@@ -238,19 +306,21 @@ class Contrastive(nn.Module):
         return view_crpt
         
     
-    def _get_proj(self, proj_head, z_dim):
+    def _get_proj(self, proj_head, in_dim):
         
         if callable(proj_head):
             return proj_head
         
         assert proj_head in ['linear', 'MLP']
         
+        out_dim = self.proj_out_dim
+        
         if proj_head == 'linear':
-            return nn.Linear(z_dim, z_dim)
+            return nn.Linear(in_dim, out_dim)
         elif proj_head == 'MLP':
-            return nn.Sequential(nn.Linear(z_dim, z_dim),
+            return nn.Sequential(nn.Linear(in_dim, out_dim),
                                  nn.ReLU(inplace=True),
-                                 nn.Linear(z_dim, z_dim))
+                                 nn.Linear(out_dim, out_dim))
         
         
     def _get_loss(self, objective):

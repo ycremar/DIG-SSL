@@ -1,3 +1,4 @@
+import numpy as np
 import torch
 import torch.nn.functional as F
 import itertools
@@ -49,8 +50,8 @@ def JSE_loss(zs, zs_n=None, batch=None, sigma=None, neg_by_crpt=False):
 def JSE_local_global_negative_paired(z_g, z_n, batch):
     '''
     Args:
-        z_g: of size [8, 512]
-        z_n: of size [16000, 512]
+        z_g: of size [n_batch, 2*dim]
+        z_n: of size [n_batch*nodes_per_batch, 2*dim]
     '''
     num_graphs = int(z_g.shape[0]/2)  # 4
     num_nodes = int(z_n.shape[0]/2) # 8000
@@ -84,8 +85,8 @@ def JSE_local_global(z_g, z_n, batch):
     num_graphs = z_g.shape[0]
     num_nodes = z_n.shape[0]
 
-    pos_mask = torch.zeros((num_nodes, num_graphs))
-    neg_mask = torch.ones((num_nodes, num_graphs))
+    pos_mask = torch.zeros((num_nodes, num_graphs)).cuda()
+    neg_mask = torch.ones((num_nodes, num_graphs)).cuda()
     for nodeidx, graphidx in enumerate(batch):
         pos_mask[nodeidx][graphidx] = 1.
         neg_mask[nodeidx][graphidx] = 0.
@@ -129,9 +130,10 @@ def get_expectation(masked_d_prime, positive=True):
         positive (bool): Set True if the d_prime is masked for positive pairs,
                         set False for negative pairs.
     '''
+    log_2 = np.log(2.)
     if positive:
-        score = - F.softplus(-masked_d_prime)
+        score = log_2 - F.softplus(-masked_d_prime)
     else:
-        score = F.softplus(-masked_d_prime) + masked_d_prime
+        score = F.softplus(-masked_d_prime) + masked_d_prime - log_2
     return score
 
