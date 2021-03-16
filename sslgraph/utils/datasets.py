@@ -19,7 +19,7 @@ import numpy as np
 
 from copy import deepcopy
 
-from .feat_expansion import FeatureExpander
+from .feat_expansion import FeatureExpander, CatDegOnehot, get_max_deg
 
 
 def get_dataset(name, task, sparse=True, feat_str="deg+ak3+reall", root=None):
@@ -50,7 +50,9 @@ def get_dataset(name, task, sparse=True, feat_str="deg+ak3+reall", root=None):
         return dataset, dataset_pretrain
 
     elif task == "unsupervised":
-        dataset = TUDatasetExt("./unsuper_dataset/", name=name, task=task)
+        max_degree = get_max_deg(TUDatasetExt("./unsuper_dataset/raw/", name=name, task=task))
+        dataset = TUDatasetExt("./unsuper_dataset/", name=name, task=task,
+                               pre_transform=CatDegOnehot(max_degree), use_node_attr=True)
         return dataset
 
     else:
@@ -61,7 +63,7 @@ class TUDatasetExt(InMemoryDataset):
     '''
     Used in GraphCL for feature expansion
     '''
-    url = 'https://ls11-www.cs.tu-dortmund.de/staff/morris/graphkerneldatasets'
+    url = 'https://ls11-www.cs.tu-dortmund.de/people/morris/graphkerneldatasets'
 #     url = 'https://www.chrsmrrs.com/graphkerneldatasets'
     cleaned_url = ('https://raw.githubusercontent.com/nd7141/graph_datasets/master/datasets')
 
@@ -100,13 +102,14 @@ class TUDatasetExt(InMemoryDataset):
             if self.data.edge_attr is not None and not use_edge_attr:
                 num_edge_attributes = self.num_edge_attributes
                 self.data.edge_attr = self.data.edge_attr[:, num_edge_attributes:]
-            if not (self.name == 'MUTAG'
-                    or self.name == 'PTC_MR'
-                    or self.name == 'DD'
-                    or self.name == 'PROTEINS'
-                    or self.name == 'NCI1'
-                    or self.name == 'NCI109'
-            ):
+#             if not (self.name == 'MUTAG'
+#                     or self.name == 'PTC_MR'
+#                     or self.name == 'DD'
+#                     or self.name == 'PROTEINS'
+#                     or self.name == 'NCI1'
+#                     or self.name == 'NCI109'
+#             ):
+            if self.data.x is None:
                 edge_index = self.data.edge_index[0, :].numpy()
                 _, num_edge = self.data.edge_index.size()
                 nlist = [edge_index[n] + 1 for n in range(num_edge - 1) if edge_index[n] > edge_index[n + 1]]

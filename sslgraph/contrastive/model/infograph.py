@@ -18,11 +18,11 @@ class ProjHead(nn.Module):
 
     def forward(self, x):
         return self.block(x) + self.linear_shortcut(x)
-    
+
 
 class InfoGraph(Contrastive):
     
-    def __init__(self, dim):
+    def __init__(self, dim, device=None):
         '''
         Args:
             diffusion_type: String. Diffusion instantiation mode with two options:
@@ -42,6 +42,6 @@ class InfoGraph(Contrastive):
                                       device=device)
         
     def train(self, encoders, data_loader, optimizer, epochs):
-        encs, (proj, proj_n) = super(InfoGraph, self).train(self, encoders, data_loader, optimizer, epochs)
+        enc, (proj, proj_n) = super(InfoGraph, self).train(self, encoders, data_loader, optimizer, epochs)
         
-        return encoder
+        return enc

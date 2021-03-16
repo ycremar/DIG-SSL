@@ -56,7 +56,7 @@ def edge_perturbation(add=True, drop=False, ratio=0.1):
     return views_fn
 
 
-def diffusion(mode='ppr', alpha=0.2, t=5):
+def diffusion(mode='ppr', alpha=0.2, t=5, add_self_loop=True):
     '''
     Args:
         mode: Diffusion instantiation mode with two options:
@@ -67,7 +67,14 @@ def diffusion(mode='ppr', alpha=0.2, t=5):
     '''
     def do_trans(data):
         node_num, _ = data.x.size()
-        orig_adj = to_dense_adj(data.edge_index)[0]
+        if add_self_loop:
+            sl = torch.tensor([[n, n] for n in range(node_num)]).t()
+            edge_index = torch.cat((data.edge_index, sl), dim=1)
+        else:
+            edge_index = data.edge_index.detach().clone()
+        
+        orig_adj = to_dense_adj(edge_index)[0]
+        orig_adj = torch.where(orig_adj>1, torch.ones_like(orig_adj), orig_adj)
         d = torch.diag(torch.sum(orig_adj, 1))
 
         if mode == 'ppr':
@@ -80,8 +87,11 @@ def diffusion(mode='ppr', alpha=0.2, t=5):
 
         else:
             raise Exception("Must choose one diffusion instantiation mode from 'ppr' and 'heat'!")
+            
+        edge_ind, edge_attr = dense_to_sparse(diff_adj)
 
-        return Data(x=data.x, edge_index=dense_to_sparse(diff_adj)[0])
+        return Data(x=data.x, edge_index=edge_ind, edge_attr=edge_attr)
+    
 
     def views_fn(data):
         '''
@@ -107,7 +117,8 @@ def diffusion(mode='ppr', alpha=0.2, t=5):
     return views_fn
 
 
-def diffusion_with_sample(sample_size=2000, batch_size=4, mode='ppr', alpha=0.2, t=5, epsilon=False):
+def diffusion_with_sample(sample_size=2000, batch_size=4, mode='ppr', 
+                          alpha=0.2, t=5, epsilon=False, add_self_loop=True):
     '''
     Args:
         sample_size: Number of nodes in the sampled subgraoh from a large graph.
@@ -135,7 +146,14 @@ def diffusion_with_sample(sample_size=2000, batch_size=4, mode='ppr', alpha=0.2,
             batch tensor with shape [num_nodes].
         '''
         node_num, _ = data.x.size()
+        if add_self_loop:
+            sl = torch.tensor([[n, n] for n in range(node_num)]).t()
+            edge_index = torch.cat((edge_index, sl), dim=1)
+        else:
+            edge_index = data.edge_index.detach().clone()
+        
         orig_adj = to_dense_adj(data.edge_index)[0]
+        orig_adj = torch.where(orig_adj>1, torch.ones_like(orig_adj), orig_adj)
         d = torch.diag(torch.sum(orig_adj, 1))
 
         if mode == 'ppr':
@@ -159,7 +177,6 @@ def diffusion_with_sample(sample_size=2000, batch_size=4, mode='ppr', alpha=0.2,
             scaler.fit(diff_adj)
             diff_adj = torch.tensor(scaler.transform(diff_adj))
 
-
         dlist_orig_x = []
         dlist_diff_x = []
         drop_num = node_num - sample_size
@@ -174,9 +191,11 @@ def diffusion_with_sample(sample_size=2000, batch_size=4, mode='ppr', alpha=0.2,
             sample_diff_adj = sample_diff_adj[idx_nondrop, :][:, idx_nondrop]
 
             sample_orig_x = data.x[idx_nondrop]
+            
+            edge_ind, edge_attr = dense_to_sparse(sample_diff_adj)
 
             dlist_orig_x.append(Data(x=sample_orig_x, edge_index=dense_to_sparse(sample_orig_adj)[0]))
-            dlist_diff_x.append(Data(x=sample_orig_x, edge_index=dense_to_sparse(sample_diff_adj)[0]))
+            dlist_diff_x.append(Data(x=sample_orig_x, edge_index=edge_ind, edge_attr=edge_attr))
 
         return Batch.from_data_list(dlist_orig_x), Batch.from_data_list(dlist_diff_x)
 
