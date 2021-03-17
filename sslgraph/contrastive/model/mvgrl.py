@@ -11,7 +11,7 @@ class MVGRL_enc(nn.Module):
     '''
     def __init__(self, encoder_0, encoder_1, 
                  proj, proj_n, views_fn, 
-                 graph_level=True, node_level=True, device=None):
+                 graph_level=True, node_level=True):
         
         super(MVGRL_enc, self).__init__()
         self.encoder_0 = encoder_0
@@ -21,20 +21,17 @@ class MVGRL_enc(nn.Module):
         self.views_fn = views_fn
         self.graph_level = graph_level
         self.node_level = node_level
-        if device is None:
-            self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-        else:
-            self.device = device
         
     def forward(self, data):
+        device = data.x.device
         
         zg_1, zn_1 = self.encoder_0(self.views_fn[0](data.to('cpu'))
-                                    .to(self.device))
+                                    .to(device))
         zg_1 = self.proj(zg_1)
         zn_1 = self.proj_n(zn_1)
         
         zg_2, zn_2 = self.encoder_1(self.views_fn[1](data.to('cpu'))
-                                    .to(self.device))
+                                    .to(device))
         zg_2 = self.proj(zg_2)
         zn_2 = self.proj_n(zn_2)
         
@@ -100,14 +97,15 @@ class MVGRL(Contrastive):
         for encs, (proj, proj_n) in super(MVGRL, self).train(encoders, data_loader, 
                                                              optimizer, epochs, per_epoch_out):
             encoder = MVGRL_enc(encs[0], encs[1], proj, proj_n, 
-                                self.views_fn, True, False, self.device)
+                                self.views_fn, True, False)
             yield encoder   
     
     
     
 class NodeMVGRL(Contrastive):
     
-    def __init__(self, z_dim, z_n_dim, diffusion_type='ppr', alpha=None, t=None, 
+    def __init__(self, z_dim, z_n_dim, diffusion_type='ppr', alpha=0.2, t=5, 
+                 batch_size=2, num_nodes=2000,
                  graph_level_output=False, node_level_output=True, device=None, 
                  choice_model='best', model_path='models'):
         '''
@@ -120,9 +118,13 @@ class NodeMVGRL(Contrastive):
             subgraph: Boolean. Whether to sample subgraph from a large graph. 
                 Set to True for node-level tasks on large graphs.
         '''
-        views_fn = [diffusion_with_sample(), None]
         self.graph_level = graph_level_output
         self.node_level = node_level_output
+        self.mode = diffusion_type
+        self.alpha = alpha
+        self.t = t
+        views_fn = [diffusion_with_sample(num_nodes, batch_size, mode=self.mode,
+                                          alpha=self.alpha, t=self.t), None]
         
         super(NodeMVGRL, self).__init__(objective='JSE',
                                         views_fn=views_fn,
@@ -141,8 +143,8 @@ class NodeMVGRL(Contrastive):
         for encs, (proj, proj_n) in super(NodeMVGRL, self).train(encoders, data_loader, 
                                                              optimizer, epochs, per_epoch_out):
             views_fn = [lambda x: x,
-                        diffusion(mode=diffusion_type, alpha=alpha, t=t)]
+                        diffusion(mode=self.mode, alpha=self.alpha, t=self.t)]
             # mvgrl for node-level tasks follows DGI, excluding the projection heads after pretraining
             mvgrl_enc = MVGRL_enc(encs[0], encs[1], (lambda x: x), (lambda x: x), 
-                                  views_fn, False, True, self.device)
+                                  views_fn, False, True)
             yield mvgrl_enc

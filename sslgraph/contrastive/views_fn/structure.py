@@ -152,7 +152,7 @@ def diffusion_with_sample(sample_size=2000, batch_size=4, mode='ppr',
         else:
             edge_index = data.edge_index.detach().clone()
         
-        orig_adj = to_dense_adj(data.edge_index)[0]
+        orig_adj = to_dense_adj(edge_index)[0]
         orig_adj = torch.where(orig_adj>1, torch.ones_like(orig_adj), orig_adj)
         d = torch.diag(torch.sum(orig_adj, 1))
 

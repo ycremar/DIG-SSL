@@ -45,6 +45,8 @@ class EvalUnsupevised(object):
         self.out_dim = dataset.num_classes
         if device is None:
             self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        elif isinstance(device, int):
+            self.device = torch.device('cuda:%d'%device)
         else:
             self.device = device
 
@@ -81,7 +83,7 @@ class EvalUnsupevised(object):
         test_scores_m, test_scores_sd = [], []
         for i, enc in enumerate(learning_model.train(encoder, pretrain_loader, 
                                                      p_optimizer, self.p_epoch, True)):
-            if i%self.log_interval==0:
+            if (i+1)%self.log_interval==0:
                 test_scores = []
                 loader = DataLoader(self.dataset, self.batch_size, shuffle=False)
                 embed, lbls = self.get_embed(enc.to(self.device), loader)
@@ -142,13 +144,16 @@ class EvalUnsupevised(object):
         return acc
     
     
-    def log_reg(self, train_embs, train_lbs, test_embs, test_lbls):
+    def log_reg(self, train_embs, train_lbls, test_embs, test_lbls):
         
-        train_embs, train_lbls = torch.from_numpy(train_embs).cuda(), torch.from_numpy(train_lbls).cuda()
-        test_embs, test_lbls= torch.from_numpy(test_embs).cuda(), torch.from_numpy(test_lbls).cuda()
+        train_embs = torch.from_numpy(train_embs).to(self.device)
+        train_lbls = torch.from_numpy(train_lbls).to(self.device)
+        test_embs = torch.from_numpy(test_embs).to(self.device)
+        test_lbls = torch.from_numpy(test_lbls).to(self.device)
 
+        xent = nn.CrossEntropyLoss()
         log = LogReg(hid_units, nb_classes)
-        log.cuda()
+        log.to(self.device)
         opt = torch.optim.Adam(log.parameters(), lr=0.01, weight_decay=0.0)
 
         best_val = 0
@@ -333,9 +338,11 @@ class EvalSemisupevised(object):
                 acc_m_lst.append(acc_m)
                 acc_sd_lst.append(acc_sd)
                 paras.append((p_lr, p_epoch))
-        idx = np.argmax(acc_m)
+        idx = np.argmax(acc_m_lst)
+        print('Best paras: %d epoch, lr=%f, acc=%.4f' %(
+            paras[idx][1], paras[idx][0], acc_m_lst[idx]))
         
-        return acc_m[idx], acc_sd[idx], paras[idx]
+        return acc_m_lst[idx], acc_sd_lst[idx], paras[idx]
 
     
     def finetune(self, model, optimizer, loader):

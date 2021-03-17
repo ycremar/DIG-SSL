@@ -18,8 +18,9 @@ def JSE_loss(zs, zs_n=None, batch=None, sigma=None, neg_by_crpt=False):
         assert len(zs_n) == len(zs)
         assert batch is not None
         
-        jse = (JSE_local_global_negative_paired if neg_by_crpt
-               else JSE_local_global)
+        jse = (JSE_local_global_negative_paired 
+               if neg_by_crpt else JSE_local_global)
+        
         if len(zs) == 1:
             return jse(zs[0], zs_n[0], batch)
         elif len(zs) == 2:
@@ -50,11 +51,12 @@ def JSE_loss(zs, zs_n=None, batch=None, sigma=None, neg_by_crpt=False):
 def JSE_local_global_negative_paired(z_g, z_n, batch):
     '''
     Args:
-        z_g: of size [n_batch, 2*dim]
-        z_n: of size [n_batch*nodes_per_batch, 2*dim]
+        z_g: of size [2*n_batch, dim]
+        z_n: of size [2*n_batch*nodes_per_batch, dim]
     '''
+    device = z_g.device
     num_graphs = int(z_g.shape[0]/2)  # 4
-    num_nodes = int(z_n.shape[0]/2) # 8000
+    num_nodes = int(z_n.shape[0]/2) # 4*2000
     z_g, _ = torch.split(z_g, num_graphs)
     z_n, z_n_crpt = torch.split(z_n, num_nodes)
 
@@ -64,10 +66,10 @@ def JSE_local_global_negative_paired(z_g, z_n, batch):
 
     d_pos = torch.cat([torch.matmul(z_g[i], z_n[i].t()) for i in range(num_graphs)])  # [1, 8000]
     d_neg = torch.cat([torch.matmul(z_g[i], z_n_crpt[i].t()) for i in range(num_graphs)])  # [1, 8000]
-
+        
     logit = torch.unsqueeze(torch.cat((d_pos, d_neg)), 0)  # [1, 16000]
-    lb_pos = torch.ones((1, int(num_graphs * num_nodes / 2)))  # [1, 8000]
-    lb_neg = torch.zeros((1, int(num_graphs * num_nodes / 2)))  # [1, 8000]
+    lb_pos = torch.ones((1, num_nodes)).to(device)  # [1, 8000]
+    lb_neg = torch.zeros((1, num_nodes)).to(device)  # [1, 8000]
     lb = torch.cat((lb_pos, lb_neg), 1)
 
     b_xent = nn.BCEWithLogitsLoss()
@@ -82,11 +84,12 @@ def JSE_local_global(z_g, z_n, batch):
         z_n: Tensor of shape [n_nodes, z_dim].
         batch: Tensor of shape [n_graphs].
     '''
+    device = z_g.device
     num_graphs = z_g.shape[0]
     num_nodes = z_n.shape[0]
 
-    pos_mask = torch.zeros((num_nodes, num_graphs)).cuda()
-    neg_mask = torch.ones((num_nodes, num_graphs)).cuda()
+    pos_mask = torch.zeros((num_nodes, num_graphs)).to(device)
+    neg_mask = torch.ones((num_nodes, num_graphs)).to(device)
     for nodeidx, graphidx in enumerate(batch):
         pos_mask[nodeidx][graphidx] = 1.
         neg_mask[nodeidx][graphidx] = 0.
@@ -105,10 +108,11 @@ def JSE_global_global(z1, z2):
     Args:
         z1, z2: Tensor of shape [batch_size, z_dim].
     '''
+    device = z1.device
     num_graphs = z1.shape[0]
 
-    pos_mask = torch.zeros((num_graphs, num_graphs))
-    neg_mask = torch.ones((num_graphs, num_graphs))
+    pos_mask = torch.zeros((num_graphs, num_graphs)).to(device)
+    neg_mask = torch.ones((num_graphs, num_graphs)).to(device)
     for graphidx in range(num_graphs):
         pos_mask[graphidx][graphidx] = 1.
         neg_mask[graphidx][graphidx] = 0.

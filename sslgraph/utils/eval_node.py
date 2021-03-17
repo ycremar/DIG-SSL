@@ -4,6 +4,7 @@ import torch.nn as nn
 from sklearn.model_selection import StratifiedKFold
 from torch_geometric.data import DataLoader
 from torch import optim
+from sklearn import preprocessing
 from sslgraph.utils import get_node_dataset
 
 
@@ -37,25 +38,28 @@ class EvalUnsupevised(object):
         self.test_mask = test_mask
         self.metric = metric
         self.device = device
+        self.classifier = classifier
         self.log_interval = log_interval
-        self.out_dim = full_dataset.num_classes
+        self.num_classes = full_dataset.num_classes
         if device is None:
             self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        elif isinstance(device, int):
+            self.device = torch.device('cuda:%d'%device)
         else:
             self.device = device
 
         # Use default config if not further specified
         self.setup_train_config()
 
-    def setup_train_config(self, batch_size = 256,
-                           p_optim = 'Adam', p_lr = 0.01, p_weight_decay = 0, p_epoch = 20):
-        
-        self.batch_size = batch_size
+    def setup_train_config(self, p_optim = 'Adam', p_lr = 0.01, p_weight_decay = 0, 
+                           p_epoch = 2000, comp_embed_on='cpu'):
 
         self.p_optim = p_optim
         self.p_lr = p_lr
         self.p_weight_decay = p_weight_decay
         self.p_epoch = p_epoch
+        
+        self.comp_embed_on = comp_embed_on
 
     def evaluate(self, learning_model, encoder, pred_head=None, fold_seed=None):
         '''
@@ -75,11 +79,12 @@ class EvalUnsupevised(object):
                                                    weight_decay=self.p_weight_decay)
         
         test_scores = []
+        per_epoch_out = (self.log_interval<self.p_epoch)
         for i, enc in enumerate(learning_model.train(encoder, full_loader, 
-                                                     p_optimizer, self.p_epoch, True)):
-            if i%self.log_interval==0:
+                                                     p_optimizer, self.p_epoch, per_epoch_out)):
+            if not per_epoch_out or (i+1)%self.log_interval==0:
                 test_scores = []
-                embed, lbls = self.get_embed(enc.to(self.device), train_loader)
+                embed, lbls = self.get_embed(enc.to(self.device), full_loader)
                 lbs = np.array(preprocessing.LabelEncoder().fit_transform(lbls))
 
                 test_score = self.get_clf()(embed[self.train_mask], lbls[self.train_mask],
@@ -93,7 +98,7 @@ class EvalUnsupevised(object):
 
 
     def grid_search(self, learning_model, encoder, pred_head=None, fold_seed=12345,
-                    p_lr_lst=[0.1,0.01,0.001], p_epoch_lst=[20,40,60,80,100]):
+                    p_lr_lst=[0.1,0.01,0.001], p_epoch_lst=[2000]):
         
         acc_m_lst = []
         acc_sd_lst = []
@@ -128,18 +133,22 @@ class EvalUnsupevised(object):
         return acc
     
     
-    def log_reg(self, train_embs, train_lbs, test_embs, test_lbls):
+    def log_reg(self, train_embs, train_lbls, test_embs, test_lbls):
         
-        train_embs, train_lbls = torch.from_numpy(train_embs).cuda(), torch.from_numpy(train_lbls).cuda()
-        test_embs, test_lbls= torch.from_numpy(test_embs).cuda(), torch.from_numpy(test_lbls).cuda()
+        hid_units = train_embs.shape[1]
+        train_embs = torch.from_numpy(train_embs).to(self.device)
+        train_lbls = torch.from_numpy(train_lbls).to(self.device)
+        test_embs = torch.from_numpy(test_embs).to(self.device)
+        test_lbls = torch.from_numpy(test_lbls).to(self.device)
 
-        log = LogReg(hid_units, nb_classes)
-        log.cuda()
+        xent = nn.CrossEntropyLoss()
+        log = LogReg(hid_units, self.num_classes)
+        log.to(self.device)
         opt = torch.optim.Adam(log.parameters(), lr=0.01, weight_decay=0.0)
 
         best_val = 0
         test_acc = None
-        for it in range(100):
+        for it in range(300):
             log.train()
             opt.zero_grad()
 
@@ -159,14 +168,16 @@ class EvalUnsupevised(object):
     def get_embed(self, model, loader):
     
         model.eval()
+        model.to(self.comp_embed_on)
         ret, y = [], []
         with torch.no_grad():
             for data in loader:
                 y.append(data.y.numpy())
-                data.to(self.device)
+                data.to(self.comp_embed_on)
                 embed = model(data)
                 ret.append(embed.cpu().numpy())
-
+                
+        model.to(self.device)
         ret = np.concatenate(ret, 0)
         y = np.concatenate(y, 0)
         return ret, y

@@ -48,7 +48,12 @@ class Contrastive(nn.Module):
         self.proj_n = proj_n
         self.choice_model = choice_model
         self.model_path = model_path
-        self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        if device is None:
+            self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        elif isinstance(device, int):
+            self.device = torch.device('cuda:%d'%device)
+        else:
+            self.device = device
         
         
     def train(self, encoder, data_loader, optimizer, epochs, per_epoch_out=False):
@@ -320,10 +325,10 @@ class Contrastive(nn.Module):
         data_list = view.to_data_list()
         crpt_list = []
         for data in data_list:
-            n_nodes = view.x.shape[0]
+            n_nodes = data.x.shape[0]
             perm = torch.randperm(n_nodes).long()
-            crpt_x = view.x[perm]
-            crpt_list.append(Data(x=crpt_x, edge_index=view.edge_index))
+            crpt_x = data.x[perm]
+            crpt_list.append(Data(x=crpt_x, edge_index=data.edge_index))
         view_crpt = Batch.from_data_list(crpt_list)
 
         return view_crpt
