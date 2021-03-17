@@ -28,6 +28,5 @@ class GRACE(Contrastive):
         
     def train(self, encoders, data_loader, optimizer, epochs):
         # GRACE removes projection heads after pre-training
-        enc, proj = super().train(self, encoders, data_loader, optimizer, epochs)
-
-        return enc
+        for enc, proj in super().train(self, encoders, data_loader, optimizer, epochs):
+            yield enc

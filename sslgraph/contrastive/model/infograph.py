@@ -35,13 +35,13 @@ class InfoGraph(Contrastive):
         proj = ProjHead(dim)
         proj_n = ProjHead(dim)
         super(InfoGraph, self).__init__(objective='JSE',
-                                      views_fn=views_fn,
-                                      node_level=True,
-                                      proj=proj,
-                                      proj_n=proj_n,
-                                      device=device)
+                                        views_fn=views_fn,
+                                        node_level=True,
+                                        proj=proj,
+                                        proj_n=proj_n,
+                                        device=device)
         
-    def train(self, encoders, data_loader, optimizer, epochs):
-        enc, (proj, proj_n) = super(InfoGraph, self).train(self, encoders, data_loader, optimizer, epochs)
-        
-        return enc
+    def train(self, encoders, data_loader, optimizer, epochs, per_epoch_out=False):
+        for enc, (proj, proj_n) in super(InfoGraph, self).train(self, encoders, data_loader, 
+                                                                optimizer, epochs, per_epoch_out):
+            yield enc

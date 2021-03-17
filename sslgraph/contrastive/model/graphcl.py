@@ -54,8 +54,8 @@ class GraphCL(Contrastive):
                                       model_path=model_path,
                                       device=device)
         
-    def train(self, encoders, data_loader, optimizer, epochs):
+    def train(self, encoders, data_loader, optimizer, epochs, per_epoch_out=False):
         # GraphCL removes projection heads after pre-training
-        enc, proj = super(GraphCL, self).train(encoders, data_loader, optimizer, epochs)
-
-        return enc
+        for enc, proj in super(GraphCL, self).train(encoders, data_loader, 
+                                                    optimizer, epochs, per_epoch_out):
+            yield enc

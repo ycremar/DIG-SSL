@@ -50,7 +50,8 @@ class Contrastive(nn.Module):
         self.model_path = model_path
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         
-    def train(self, encoder, data_loader, optimizer, epochs):
+        
+    def train(self, encoder, data_loader, optimizer, epochs, per_epoch_out=False):
         """
         Args:
             encoder: Trainable pytorch model or list of models. Callable with inputs of Data 
@@ -60,12 +61,17 @@ class Contrastive(nn.Module):
             dataloader: Dataloader for contrastive training.
             optimizer: Torch optimizer.
             epochs: Integer.
+            per_epoch_out: Boolean. If True, yield encoder per k epochs. Otherwise, only yield
+                the final encoder at the last epoch.
+        Returns:
+            Generator that yield encoder per k epochs or the final encoder at the last epoch.
         """
+        self.per_epoch_out = per_epoch_out
+        
         if self.z_n_dim is None:
             self.proj_out_dim = self.z_dim
         else:
             self.proj_out_dim = self.z_n_dim
-        
         
         if self.graph_level and self.proj is not None:
             self.proj_head_g = self._get_proj(self.proj, self.z_dim).to(self.device)
@@ -89,11 +95,14 @@ class Contrastive(nn.Module):
             encoder = encoder.to(self.device)
             
         if self.node_level and self.graph_level:
-            return self.train_encoder_node_graph(encoder, data_loader, optimizer, epochs)
+            train_fn = self.train_encoder_node_graph
         elif self.graph_level:
-            return self.train_encoder_graph(encoder, data_loader, optimizer, epochs)
+            train_fn = self.train_encoder_graph
         else:
-            return self.train_encoder_node(encoder, data_loader, optimizer, epochs)
+            train_fn = self.train_encoder_node
+            
+        for enc in train_fn(encoder, data_loader, optimizer, epochs):
+            yield enc
 
         
     def train_encoder_graph(self, encoder, data_loader, optimizer, epochs):
@@ -132,6 +141,10 @@ class Contrastive(nn.Module):
                     loss = self.loss_fn(zs, neg_by_crpt=self.neg_by_crpt)
                     loss.backward()
                     optimizer.step()
+                    
+                    if self.per_epoch_out:
+                        yield encoder, self.proj_head_g
+                        
                     epoch_loss += loss
                 t.set_postfix(loss='{:.6f}'.format(float(loss)))
                 
@@ -150,8 +163,8 @@ class Contrastive(nn.Module):
                 else:
                     encoder.load_state_dict(torch.load(self.model_path+'/enc_best.pkl'))
 
-
-        return encoder, self.proj_head_g
+        if not self.per_epoch_out:
+            yield encoder, self.proj_head_g
 
     
     def train_encoder_node(self, encoder, data_loader, optimizer, epochs):
@@ -191,6 +204,10 @@ class Contrastive(nn.Module):
                                         neg_by_crpt=self.neg_by_crpt)
                     loss.backward()
                     optimizer.step()
+                    
+                    if self.per_epoch_out:
+                        yield encoder, self.proj_head_n
+                    
                     epoch_loss += loss
                 t.set_postfix(loss='{:.6f}'.format(float(loss)))
                 
@@ -208,8 +225,9 @@ class Contrastive(nn.Module):
                         enc.load_state_dict(torch.load(self.model_path+'/enc%d_best.pkl'%i))
                 else:
                     encoder.load_state_dict(torch.load(self.model_path+'/enc_best.pkl'))
-            
-        return encoder, self.proj_head_n
+
+        if not self.per_epoch_out:
+            yield encoder, self.proj_head_n
     
     
     def train_encoder_node_graph(self, encoder, data_loader, optimizer, epochs):
@@ -252,6 +270,10 @@ class Contrastive(nn.Module):
                                         neg_by_crpt=self.neg_by_crpt)
                     loss.backward()
                     optimizer.step()
+                    
+                    if self.per_epoch_out:
+                        yield encoder, (self.proj_head_g, self.proj_head_n)
+                        
                     epoch_loss += loss
                 t.set_postfix(loss='{:.6f}'.format(float(loss)))
                 
@@ -270,7 +292,8 @@ class Contrastive(nn.Module):
                 else:
                     encoder.load_state_dict(torch.load(self.model_path+'/enc_best.pkl'))
 
-        return encoder, (self.proj_head_g, self.proj_head_n)
+        if not self.per_epoch_out:
+            yield encoder, (self.proj_head_g, self.proj_head_n)
     
     
     def _get_embed(self, enc, view):

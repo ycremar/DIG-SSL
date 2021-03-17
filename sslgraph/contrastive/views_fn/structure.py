@@ -148,7 +148,7 @@ def diffusion_with_sample(sample_size=2000, batch_size=4, mode='ppr',
         node_num, _ = data.x.size()
         if add_self_loop:
             sl = torch.tensor([[n, n] for n in range(node_num)]).t()
-            edge_index = torch.cat((edge_index, sl), dim=1)
+            edge_index = torch.cat((data.edge_index, sl), dim=1)
         else:
             edge_index = data.edge_index.detach().clone()
         
@@ -184,10 +184,10 @@ def diffusion_with_sample(sample_size=2000, batch_size=4, mode='ppr',
             idx_drop = np.random.choice(node_num, drop_num, replace=False)
             idx_nondrop = [n for n in range(node_num) if not n in idx_drop]
 
-            sample_orig_adj = orig_adj.copy()
+            sample_orig_adj = orig_adj.clone()
             sample_orig_adj = sample_orig_adj[idx_nondrop, :][:, idx_nondrop]
 
-            sample_diff_adj = diff_adj.copy()
+            sample_diff_adj = diff_adj.clone()
             sample_diff_adj = sample_diff_adj[idx_nondrop, :][:, idx_nondrop]
 
             sample_orig_x = data.x[idx_nondrop]

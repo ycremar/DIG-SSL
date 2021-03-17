@@ -95,14 +95,13 @@ class MVGRL(Contrastive):
                                     model_path=model_path,
                                     device=device)
         
-    def train(self, encoders, data_loader, optimizer, epochs):
-        encs, (proj, proj_n) = super(MVGRL, self).train(encoders, data_loader, optimizer, epochs)
+    def train(self, encoders, data_loader, optimizer, epochs, per_epoch_out=False):
         
-        # mvgrl for graph-level tasks follows InfoGraph, including the projection heads after pretraining
-        encoder = MVGRL_enc(encs[0], encs[1], proj, proj_n, 
-                            self.views_fn, True, False, self.device)
-        
-        return encoder
+        for encs, (proj, proj_n) in super(MVGRL, self).train(encoders, data_loader, 
+                                                             optimizer, epochs, per_epoch_out):
+            encoder = MVGRL_enc(encs[0], encs[1], proj, proj_n, 
+                                self.views_fn, True, False, self.device)
+            yield encoder   
     
     
     
@@ -121,28 +120,29 @@ class NodeMVGRL(Contrastive):
             subgraph: Boolean. Whether to sample subgraph from a large graph. 
                 Set to True for node-level tasks on large graphs.
         '''
-        views_fn = [diffusion_with_sample, None]
+        views_fn = [diffusion_with_sample(), None]
         self.graph_level = graph_level_output
         self.node_level = node_level_output
         
-        super(MVGRL, self).__init__(objective='JSE',
-                                    views_fn=views_fn,
-                                    node_level=True,
-                                    z_dim=z_dim,
-                                    z_n_dim=z_n_dim,
-                                    proj=nn.Sigmoid(),
-                                    proj_n='Linear',
-                                    neg_by_crpt=True,
-                                    choice_model=choice_model,
-                                    model_path=model_path,
-                                    device=device)
+        super(NodeMVGRL, self).__init__(objective='JSE',
+                                        views_fn=views_fn,
+                                        node_level=True,
+                                        z_dim=z_dim,
+                                        z_n_dim=z_n_dim,
+                                        proj=nn.Sigmoid(),
+                                        proj_n='linear',
+                                        neg_by_crpt=True,
+                                        choice_model=choice_model,
+                                        model_path=model_path,
+                                        device=device)
         
-    def train(self, encoders, data_loader, optimizer, epochs):
-        encs, (proj, proj_n) = super(MVGRL, self).train(encoders, data_loader, optimizer, epochs)
-        views_fn = [lambda x: x,
-                    diffusion(mode=diffusion_type, alpha=alpha, t=t)]
-        # mvgrl for node-level tasks follows DGI, excluding the projection heads after pretraining
-        encoder = MVGRL_enc(encs[0], encs[1], (lambda x: x), (lambda x: x), 
-                            views_fn, False, True, self.device)
+    def train(self, encoders, data_loader, optimizer, epochs, per_epoch_out=False):
         
-        return encoder
+        for encs, (proj, proj_n) in super(NodeMVGRL, self).train(encoders, data_loader, 
+                                                             optimizer, epochs, per_epoch_out):
+            views_fn = [lambda x: x,
+                        diffusion(mode=diffusion_type, alpha=alpha, t=t)]
+            # mvgrl for node-level tasks follows DGI, excluding the projection heads after pretraining
+            mvgrl_enc = MVGRL_enc(encs[0], encs[1], (lambda x: x), (lambda x: x), 
+                                  views_fn, False, True, self.device)
+            yield mvgrl_enc

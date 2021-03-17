@@ -5,7 +5,7 @@ import re
 
 import torch
 from torch_geometric.utils import degree
-from torch_geometric.datasets import TUDataset
+from torch_geometric.datasets import TUDataset, Planetoid
 from torch_geometric.data import InMemoryDataset, download_url, extract_zip
 from torch_geometric.io import read_tu_data
 from torch_geometric.data import Batch, Data
@@ -50,13 +50,24 @@ def get_dataset(name, task, sparse=True, feat_str="deg+ak3+reall", root=None):
         return dataset, dataset_pretrain
 
     elif task == "unsupervised":
-        max_degree = get_max_deg(TUDatasetExt("./unsuper_dataset/raw/", name=name, task=task))
-        dataset = TUDatasetExt("./unsuper_dataset/", name=name, task=task,
-                               pre_transform=CatDegOnehot(max_degree), use_node_attr=True)
+        dataset = TUDatasetExt("./unsuper_dataset/", name=name, task=task)
+        if feat_str.find("deg") >= 0:
+            max_degree = get_max_deg(dataset)
+            dataset = TUDatasetExt("./unsuper_dataset/", name=name, task=task,
+                                   transform=CatDegOnehot(max_degree), use_node_attr=True)
         return dataset
 
     else:
         ValueError("Wrong task name")
+
+
+def get_node_dataset(name, root='./node_dataset/', sparse=True):
+    
+    full_dataset = Planetoid(root, name)
+    train_mask = full_dataset[0].train_mask
+    val_mask = full_dataset[0].val_mask
+    test_mask = full_dataset[0].test_mask
+    return full_dataset, train_mask, val_mask, test_mask
 
 
 class TUDatasetExt(InMemoryDataset):
@@ -102,13 +113,6 @@ class TUDatasetExt(InMemoryDataset):
             if self.data.edge_attr is not None and not use_edge_attr:
                 num_edge_attributes = self.num_edge_attributes
                 self.data.edge_attr = self.data.edge_attr[:, num_edge_attributes:]
-#             if not (self.name == 'MUTAG'
-#                     or self.name == 'PTC_MR'
-#                     or self.name == 'DD'
-#                     or self.name == 'PROTEINS'
-#                     or self.name == 'NCI1'
-#                     or self.name == 'NCI109'
-#             ):
             if self.data.x is None:
                 edge_index = self.data.edge_index[0, :].numpy()
                 _, num_edge = self.data.edge_index.size()
@@ -245,144 +249,131 @@ class TUDatasetExt(InMemoryDataset):
         return data
 
 
-def get_node_dataset(name, task, sparse=True, mode=None):
-    if task == "semisupervised":
+# class NodeDataset(InMemoryDataset):
+#     def __init__(self,
+#                  root,
+#                  name,
+#                  sparse=True,
+#                  mode='pretrain'):
 
-        pass
+#         super(NodeDataset, self).__init__()
 
-    elif task == "unsupervised":
-        dataset = NodeDataset("./node_dataset/", name=name, mode=mode)
-        return dataset
+#         self.root = root
+#         self.name = name
+#         self.mode = mode
+#         self.adj, self.features, self.labels, self.idx_train, self.idx_val, self.idx_test = self.load()
+#         self.features, _ = self.preprocess_features(self.features)
+#         self.features = torch.FloatTensor(self.features)
+#         self.nb_classes = self.labels.shape[1]
 
-    else:
-        ValueError("Wrong task name")
+#         if sparse:
+#             row_idx, col_idx = self.adj.nonzero()
+#             self.edge_index = np.concatenate((np.expand_dims(col_idx, axis=0), np.expand_dims(row_idx, axis=0)), axis=0)
+#             self.edge_index = torch.tensor(self.edge_index).long()
+#         else:
+#             self.adj = self.adj.todense()
+#             self.adj = torch.FloatTensor(self.adj[np.newaxis])
 
+#         self.labels = torch.FloatTensor(self.labels[np.newaxis])
+#         self.idx_train = torch.LongTensor(self.idx_train)
+#         self.idx_val = torch.LongTensor(self.idx_val)
+#         self.idx_test = torch.LongTensor(self.idx_test)
 
-class NodeDataset(InMemoryDataset):
-    def __init__(self,
-                 root,
-                 name,
-                 sparse=True,
-                 mode='pretrain'):
+#         self.train_lbls = torch.argmax(self.labels[0, self.idx_train], dim=1)
+#         self.val_lbls = torch.argmax(self.labels[0, self.idx_val], dim=1)
+#         self.test_lbls = torch.argmax(self.labels[0, self.idx_test], dim=1)
 
-        super(NodeDataset, self).__init__()
+#     def len(self):
+#         return 1
 
-        self.root = root
-        self.name = name
-        self.mode = mode
-        self.adj, self.features, self.labels, self.idx_train, self.idx_val, self.idx_test = self.load()
-        self.features, _ = self.preprocess_features(self.features)
-        self.features = torch.FloatTensor(self.features)
-        self.nb_classes = self.labels.shape[1]  # classes = 6
+#     def get(self, idx):
 
-        if sparse:
-            row_idx, col_idx = self.adj.nonzero()
-            self.edge_index = np.concatenate((np.expand_dims(col_idx, axis=0), np.expand_dims(row_idx, axis=0)), axis=0)
-            self.edge_index = torch.tensor(self.edge_index).long()
-        else:
-            self.adj = self.adj.todense()
-            self.adj = torch.FloatTensor(self.adj[np.newaxis])
+#         if self.mode == 'pretrain':
+#             data = Batch.from_data_list([Data(x=self.features, edge_index=self.edge_index)])
+#             return data, self.nb_classes
+#         elif self.mode == 'train':
+#             return self.idx_train, self.train_lbls
+#         elif self.mode == 'valid':
+#             return self.idx_val, self.val_lbls
+#         else:
+#             return self.idx_test, self.test_lbls
 
-        self.labels = torch.FloatTensor(self.labels[np.newaxis])
-        self.idx_train = torch.LongTensor(self.idx_train)
-        self.idx_val = torch.LongTensor(self.idx_val)
-        self.idx_test = torch.LongTensor(self.idx_test)
+#     def load(self):
+#         """Load data."""
+#         names = ['x', 'y', 'tx', 'ty', 'allx', 'ally', 'graph']
+#         objects = []
+#         for i in range(len(names)):
+#             with open("{}ind.{}.{}".format(self.root, self.name, names[i]), 'rb') as f:
+#                 if sys.version_info > (3, 0):
+#                     objects.append(pkl.load(f, encoding='latin1'))
+#                 else:
+#                     objects.append(pkl.load(f))
 
-        self.train_lbls = torch.argmax(self.labels[0, self.idx_train], dim=1)
-        self.val_lbls = torch.argmax(self.labels[0, self.idx_val], dim=1)
-        self.test_lbls = torch.argmax(self.labels[0, self.idx_test], dim=1)
+#         x, y, tx, ty, allx, ally, graph = tuple(objects)
+#         test_idx_reorder = self.parse_index_file("{}ind.{}.test.index".format(self.root, self.name))
+#         test_idx_range = np.sort(test_idx_reorder)
 
-    def len(self):
-        return 1
+#         if self.name == 'citeseer':
+#             # Fix citeseer dataset (there are some isolated nodes in the graph)
+#             # Find isolated nodes, add them as zero-vecs into the right position
+#             test_idx_range_full = range(min(test_idx_reorder), max(test_idx_reorder) + 1)
+#             tx_extended = sp.lil_matrix((len(test_idx_range_full), x.shape[1]))
+#             tx_extended[test_idx_range - min(test_idx_range), :] = tx
+#             tx = tx_extended
+#             ty_extended = np.zeros((len(test_idx_range_full), y.shape[1]))
+#             ty_extended[test_idx_range - min(test_idx_range), :] = ty
+#             ty = ty_extended
 
-    def get(self, idx):
+#         features = sp.vstack((allx, tx)).tolil()
+#         features[test_idx_reorder, :] = features[test_idx_range, :]
+#         adj = nx.adjacency_matrix(nx.from_dict_of_lists(graph))
 
-        if self.mode == 'pretrain':
-            data = Batch.from_data_list([Data(x=self.features, edge_index=self.edge_index)])
-            return data, self.nb_classes
-        elif self.mode == 'train':
-            return self.idx_train, self.train_lbls
-        elif self.mode == 'valid':
-            return self.idx_val, self.val_lbls
-        else:
-            return self.idx_test, self.test_lbls
+#         labels = np.vstack((ally, ty))
+#         labels[test_idx_reorder, :] = labels[test_idx_range, :]
 
-    def load(self):
-        """Load data."""
-        names = ['x', 'y', 'tx', 'ty', 'allx', 'ally', 'graph']
-        objects = []
-        for i in range(len(names)):
-            with open("{}ind.{}.{}".format(self.root, self.name, names[i]), 'rb') as f:
-                if sys.version_info > (3, 0):
-                    objects.append(pkl.load(f, encoding='latin1'))
-                else:
-                    objects.append(pkl.load(f))
+#         idx_test = test_idx_range.tolist()
+#         idx_train = range(len(y))
+#         idx_val = range(len(y), len(y) + 500)
 
-        x, y, tx, ty, allx, ally, graph = tuple(objects)
-        test_idx_reorder = self.parse_index_file("{}ind.{}.test.index".format(self.root, self.name))
-        test_idx_range = np.sort(test_idx_reorder)
+#         return adj, features, labels, idx_train, idx_val, idx_test
 
-        if self.name == 'citeseer':
-            # Fix citeseer dataset (there are some isolated nodes in the graph)
-            # Find isolated nodes, add them as zero-vecs into the right position
-            test_idx_range_full = range(min(test_idx_reorder), max(test_idx_reorder) + 1)
-            tx_extended = sp.lil_matrix((len(test_idx_range_full), x.shape[1]))
-            tx_extended[test_idx_range - min(test_idx_range), :] = tx
-            tx = tx_extended
-            ty_extended = np.zeros((len(test_idx_range_full), y.shape[1]))
-            ty_extended[test_idx_range - min(test_idx_range), :] = ty
-            ty = ty_extended
+#     def parse_index_file(self, filename):
+#         """Parse index file."""
+#         index = []
+#         for line in open(filename):
+#             index.append(int(line.strip()))
+#         return index
 
-        features = sp.vstack((allx, tx)).tolil()
-        features[test_idx_reorder, :] = features[test_idx_range, :]
-        adj = nx.adjacency_matrix(nx.from_dict_of_lists(graph))
+#     def sparse_to_tuple(self, sparse_mx, insert_batch=False):
+#         """Convert sparse matrix to tuple representation."""
+#         """Set insert_batch=True if you want to insert a batch dimension."""
 
-        labels = np.vstack((ally, ty))
-        labels[test_idx_reorder, :] = labels[test_idx_range, :]
+#         def to_tuple(mx):
+#             if not sp.isspmatrix_coo(mx):
+#                 mx = mx.tocoo()
+#             if insert_batch:
+#                 coords = np.vstack((np.zeros(mx.row.shape[0]), mx.row, mx.col)).transpose()
+#                 values = mx.data
+#                 shape = (1,) + mx.shape
+#             else:
+#                 coords = np.vstack((mx.row, mx.col)).transpose()
+#                 values = mx.data
+#                 shape = mx.shape
+#             return coords, values, shape
 
-        idx_test = test_idx_range.tolist()
-        idx_train = range(len(y))
-        idx_val = range(len(y), len(y) + 500)
+#         if isinstance(sparse_mx, list):
+#             for i in range(len(sparse_mx)):
+#                 sparse_mx[i] = to_tuple(sparse_mx[i])
+#         else:
+#             sparse_mx = to_tuple(sparse_mx)
 
-        return adj, features, labels, idx_train, idx_val, idx_test
+#         return sparse_mx
 
-    def parse_index_file(self, filename):
-        """Parse index file."""
-        index = []
-        for line in open(filename):
-            index.append(int(line.strip()))
-        return index
-
-    def sparse_to_tuple(self, sparse_mx, insert_batch=False):
-        """Convert sparse matrix to tuple representation."""
-        """Set insert_batch=True if you want to insert a batch dimension."""
-
-        def to_tuple(mx):
-            if not sp.isspmatrix_coo(mx):
-                mx = mx.tocoo()
-            if insert_batch:
-                coords = np.vstack((np.zeros(mx.row.shape[0]), mx.row, mx.col)).transpose()
-                values = mx.data
-                shape = (1,) + mx.shape
-            else:
-                coords = np.vstack((mx.row, mx.col)).transpose()
-                values = mx.data
-                shape = mx.shape
-            return coords, values, shape
-
-        if isinstance(sparse_mx, list):
-            for i in range(len(sparse_mx)):
-                sparse_mx[i] = to_tuple(sparse_mx[i])
-        else:
-            sparse_mx = to_tuple(sparse_mx)
-
-        return sparse_mx
-
-    def preprocess_features(self, features):
-        """Row-normalize feature matrix and convert to tuple representation"""
-        rowsum = np.array(features.sum(1))
-        r_inv = np.power(rowsum, -1).flatten()
-        r_inv[np.isinf(r_inv)] = 0.
-        r_mat_inv = sp.diags(r_inv)
-        features = r_mat_inv.dot(features)
-        return features.todense(), self.sparse_to_tuple(features)
+#     def preprocess_features(self, features):
+#         """Row-normalize feature matrix and convert to tuple representation"""
+#         rowsum = np.array(features.sum(1))
+#         r_inv = np.power(rowsum, -1).flatten()
+#         r_inv[np.isinf(r_inv)] = 0.
+#         r_mat_inv = sp.diags(r_inv)
+#         features = r_mat_inv.dot(features)
+#         return features.todense(), self.sparse_to_tuple(features)

@@ -28,20 +28,21 @@ class LogReg(nn.Module):
     def forward(self, seq):
         ret = self.fc(seq)
         return ret
-    
 
+    
 class EvalUnsupevised(object):
     
-    def __init__(self, dataset, out_dim, classifier='SVC', search=True,
+    def __init__(self, dataset, classifier='SVC', search=True, log_interval=1,
                  epoch_select='test_max', metric='acc', n_folds=10, device=None):
         
         self.dataset = dataset
         self.epoch_select = epoch_select
         self.metric = metric
         self.classifier = classifier
+        self.log_interval = log_interval
         self.search = search
         self.n_folds = n_folds
-        self.out_dim = out_dim
+        self.out_dim = dataset.num_classes
         if device is None:
             self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         else:
@@ -77,28 +78,36 @@ class EvalUnsupevised(object):
         p_optimizer = self.get_optim(self.p_optim)(params, lr=self.p_lr, 
                                                    weight_decay=self.p_weight_decay)
         
-        encoder = learning_model.train(encoder, pretrain_loader, p_optimizer, self.p_epoch)
-        
-        test_scores = []
-        loader = DataLoader(self.dataset, self.batch_size, shuffle=False)
-        embed, lbls = self.get_embed(encoder.to(self.device), loader)
-        lbs = np.array(preprocessing.LabelEncoder().fit_transform(lbls))
-        
-        kf = StratifiedKFold(n_splits=self.n_folds, shuffle=True, random_state=fold_seed)
-        for fold, (train_index, test_index) in enumerate(kf.split(embed, lbls)):
-            test_score = self.get_clf()(embed[train_index], lbls[train_index],
-                                        embed[test_index], lbls[test_index])
-            test_scores.append(test_score)
+        test_scores_m, test_scores_sd = [], []
+        for i, enc in enumerate(learning_model.train(encoder, pretrain_loader, 
+                                                     p_optimizer, self.p_epoch, True)):
+            if i%self.log_interval==0:
+                test_scores = []
+                loader = DataLoader(self.dataset, self.batch_size, shuffle=False)
+                embed, lbls = self.get_embed(enc.to(self.device), loader)
+                lbs = np.array(preprocessing.LabelEncoder().fit_transform(lbls))
 
-        test_scores = torch.tensor(test_scores)
-        test_score_mean = test_scores.mean().item()
-        test_score_std = test_scores.std().item() 
-        
-        return test_score_mean, test_score_std
+                kf = StratifiedKFold(n_splits=self.n_folds, shuffle=True, random_state=fold_seed)
+                for fold, (train_index, test_index) in enumerate(kf.split(embed, lbls)):
+                    test_score = self.get_clf()(embed[train_index], lbls[train_index],
+                                                embed[test_index], lbls[test_index])
+                    test_scores.append(test_score)
+
+                kfold_scores = torch.tensor(test_scores)
+                test_score_mean = kfold_scores.mean().item()
+                test_score_std = kfold_scores.std().item() 
+                test_scores_m.append(test_score_mean)
+                test_scores_sd.append(test_score_std)
+                
+        idx = np.argmax(test_scores_m)
+        acc = test_scores_m[idx]
+        sd = test_scores_sd[idx]
+        print('Best epoch %d: acc %.4f +/-(%.4f)'%((idx+1)*self.log_interval, acc, sd))
+        return acc, sd 
 
 
     def grid_search(self, learning_model, encoder, pred_head=None, fold_seed=12345,
-                    p_lr_lst=[0.1,0.01,0.001], p_epoch_lst=[20,40,60,80,100]):
+                    p_lr_lst=[0.1,0.01,0.001], p_epoch_lst=[20,40,60]):
         
         acc_m_lst = []
         acc_sd_lst = []
@@ -218,12 +227,12 @@ class PredictionModel(nn.Module):
 
 class EvalSemisupevised(object):
     
-    def __init__(self, dataset, dataset_pretrain, label_rate, out_dim, loss=nn.functional.nll_loss, 
+    def __init__(self, dataset, dataset_pretrain, label_rate, loss=nn.functional.nll_loss, 
                  epoch_select='test_max', metric='acc', n_folds=10, device=None):
         
         self.dataset, self.dataset_pretrain = dataset, dataset_pretrain
         self.label_rate = label_rate
-        self.out_dim = out_dim
+        self.out_dim = dataset.num_classes
         self.metric = metric
         self.n_folds = n_folds
         self.loss = loss
@@ -265,7 +274,7 @@ class EvalSemisupevised(object):
         p_optimizer = self.get_optim(self.p_optim)(encoder.parameters(), lr=self.p_lr,
                                                    weight_decay=self.p_weight_decay)
         if self.p_epoch > 0:
-            encoder = learning_model.train(encoder, pretrain_loader, p_optimizer, self.p_epoch)
+            encoder = next(learning_model.train(encoder, pretrain_loader, p_optimizer, self.p_epoch))
         model = PredictionModel(encoder, pred_head, learning_model.z_dim, self.out_dim).to(self.device)
         
         test_scores = []
