@@ -78,23 +78,31 @@ class EvalUnsupevised(object):
         
         p_optimizer = self.get_optim(self.p_optim)(params, lr=self.p_lr, 
                                                    weight_decay=self.p_weight_decay)
-        
-        test_scores = []
+
+        test_scores_m, test_scores_sd = [], []
         per_epoch_out = (self.log_interval<self.p_epoch)
         for i, enc in enumerate(learning_model.train(encoder, full_loader, 
                                                      p_optimizer, self.p_epoch, per_epoch_out)):
             if not per_epoch_out or (i+1)%self.log_interval==0:
                 embed, lbls = self.get_embed(enc.to(self.device), full_loader)
                 lbs = np.array(preprocessing.LabelEncoder().fit_transform(lbls))
-
-                test_score = self.get_clf()(embed[self.train_mask], lbls[self.train_mask],
-                                            embed[self.test_mask], lbls[self.test_mask])
-                test_scores.append(test_score)
                 
-        idx = np.argmax(test_scores)
-        print(test_scores)
-        acc = test_scores[idx]
-        print('Best epoch %d: acc %.4f.'%((idx+1)*self.log_interval, acc))
+                test_scores = []
+                for _ in range(10):
+                    test_score = self.get_clf()(embed[self.train_mask], lbls[self.train_mask],
+                                                embed[self.test_mask], lbls[self.test_mask])
+                    test_scores.append(test_score)
+                
+                test_scores = torch.tensor(test_scores)
+                test_score_mean = test_scores.mean().item()
+                test_score_std = test_scores.std().item() 
+                test_scores_m.append(test_score_mean)
+                test_scores_sd.append(test_score_std)
+                
+        idx = np.argmax(test_scores_m)
+        acc = test_scores_m[idx]
+        std = test_scores_sd[idx]
+        print('Best epoch %d: acc %.4f (+/- %.4f).'%((idx+1)*self.log_interval, acc, std))
         return acc
 
 

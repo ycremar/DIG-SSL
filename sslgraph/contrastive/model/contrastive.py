@@ -5,9 +5,7 @@ from torch_geometric.data import Batch, Data
 from sslgraph.contrastive.objectives import NCE_loss, JSE_loss
 
 class Contrastive(nn.Module):
-    def __init__(self, 
-                 objective,
-                 views_fn,
+    def __init__(self, objective, views_fn,
                  graph_level=True,
                  node_level=False,
                  z_dim=None,
@@ -292,7 +290,7 @@ class Contrastive(nn.Module):
                     else:
                         torch.save(encoder.state_dict(), self.model_path+'/enc_best.pkl')
             
-            if self.choice_model == 'best':
+            if self.choice_model == 'best' and not self.per_epoch_out:
                 if isinstance(encoder, list):
                     for i, enc in enumerate(encoder):
                         enc.load_state_dict(torch.load(self.model_path+'/enc%d_best.pkl'%i))

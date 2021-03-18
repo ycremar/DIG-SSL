@@ -100,7 +100,7 @@ class EvalUnsupevised(object):
                 test_score_std = kfold_scores.std().item() 
                 test_scores_m.append(test_score_mean)
                 test_scores_sd.append(test_score_std)
-                
+        
         idx = np.argmax(test_scores_m)
         acc = test_scores_m[idx]
         sd = test_scores_sd[idx]

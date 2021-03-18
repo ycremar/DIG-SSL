@@ -194,11 +194,11 @@ def diffusion_with_sample(sample_size=2000, batch_size=4, mode='ppr',
             
             edge_ind, edge_attr = dense_to_sparse(sample_diff_adj)
 
-            dlist_orig_x.append(Data(x=sample_orig_x.detach(), 
-                                     edge_index=dense_to_sparse(sample_orig_adj)[0].detach()))
-            dlist_diff_x.append(Data(x=sample_orig_x.detach(), 
-                                     edge_index=edge_ind.detach(), 
-                                     edge_attr=edge_attr.detach()))
+            dlist_orig_x.append(Data(x=sample_orig_x, 
+                                     edge_index=dense_to_sparse(sample_orig_adj)[0]))
+            dlist_diff_x.append(Data(x=sample_orig_x, 
+                                     edge_index=edge_ind, 
+                                     edge_attr=edge_attr))
 
         return Batch.from_data_list(dlist_orig_x), Batch.from_data_list(dlist_diff_x)
 
