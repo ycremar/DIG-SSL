@@ -8,13 +8,14 @@ class Contrastive(nn.Module):
     def __init__(self, 
                  objective,
                  views_fn,
-                 z_dim=None,
-                 z_n_dim=None,
                  graph_level=True,
                  node_level=False,
+                 z_dim=None,
+                 z_n_dim=None,
                  proj=None,
                  proj_n=None,
                  neg_by_crpt=False,
+                 tau=0.5,
                  device=None,
                  choice_model='last',
                  model_path='models'):
@@ -41,11 +42,12 @@ class Contrastive(nn.Module):
         self.views_fn = views_fn # fn: (batched) graph -> graph
         self.node_level = node_level
         self.graph_level = graph_level
-        self.neg_by_crpt = neg_by_crpt
         self.z_dim = z_dim
         self.z_n_dim = z_n_dim
         self.proj = proj
         self.proj_n = proj_n
+        self.neg_by_crpt = neg_by_crpt
+        self.tau = tau
         self.choice_model = choice_model
         self.model_path = model_path
         if device is None:
@@ -143,7 +145,7 @@ class Contrastive(nn.Module):
                         z = self._get_embed(enc, view.to(self.device))
                         zs.append(self.proj_head_g(z))
 
-                    loss = self.loss_fn(zs, neg_by_crpt=self.neg_by_crpt)
+                    loss = self.loss_fn(zs, neg_by_crpt=self.neg_by_crpt, tau=self.tau)
                     loss.backward()
                     optimizer.step()
                     
@@ -201,12 +203,12 @@ class Contrastive(nn.Module):
                         views = [v_fn(data) for v_fn in self.views_fn]
 
                     zs_n = []
-                    for v, enc in zip(views, encoders):
+                    for view, enc in zip(views, encoders):
                         z_n = self._get_embed(enc, view.to(self.device))
-                        zs_n.append(self.proj_head_g(z_n))
+                        zs_n.append(self.proj_head_n(z_n))
 
                     loss = self.loss_fn(zs_g=None, zs_n=zs_n, batch=data.batch, 
-                                        neg_by_crpt=self.neg_by_crpt)
+                                        neg_by_crpt=self.neg_by_crpt, tau=self.tau)
                     loss.backward()
                     optimizer.step()
                     
@@ -272,7 +274,7 @@ class Contrastive(nn.Module):
                         zs_g.append(self.proj_head_g(z_g))
 
                     loss = self.loss_fn(zs_g, zs_n=zs_n, batch=data.batch, 
-                                        neg_by_crpt=self.neg_by_crpt)
+                                        neg_by_crpt=self.neg_by_crpt, tau=self.tau)
                     loss.backward()
                     optimizer.step()
                     

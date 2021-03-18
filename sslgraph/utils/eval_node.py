@@ -52,7 +52,7 @@ class EvalUnsupevised(object):
         self.setup_train_config()
 
     def setup_train_config(self, p_optim = 'Adam', p_lr = 0.01, p_weight_decay = 0, 
-                           p_epoch = 2000, comp_embed_on='cpu'):
+                           p_epoch = 2000, logreg_wd = 0, comp_embed_on='cpu'):
 
         self.p_optim = p_optim
         self.p_lr = p_lr
@@ -60,6 +60,7 @@ class EvalUnsupevised(object):
         self.p_epoch = p_epoch
         
         self.comp_embed_on = comp_embed_on
+        self.logreg_wd = logreg_wd
 
     def evaluate(self, learning_model, encoder, pred_head=None, fold_seed=None):
         '''
@@ -83,7 +84,6 @@ class EvalUnsupevised(object):
         for i, enc in enumerate(learning_model.train(encoder, full_loader, 
                                                      p_optimizer, self.p_epoch, per_epoch_out)):
             if not per_epoch_out or (i+1)%self.log_interval==0:
-                test_scores = []
                 embed, lbls = self.get_embed(enc.to(self.device), full_loader)
                 lbs = np.array(preprocessing.LabelEncoder().fit_transform(lbls))
 
@@ -92,6 +92,7 @@ class EvalUnsupevised(object):
                 test_scores.append(test_score)
                 
         idx = np.argmax(test_scores)
+        print(test_scores)
         acc = test_scores[idx]
         print('Best epoch %d: acc %.4f.'%((idx+1)*self.log_interval, acc))
         return acc
@@ -144,7 +145,8 @@ class EvalUnsupevised(object):
         xent = nn.CrossEntropyLoss()
         log = LogReg(hid_units, self.num_classes)
         log.to(self.device)
-        opt = torch.optim.Adam(log.parameters(), lr=0.01, weight_decay=0.0)
+        opt = torch.optim.Adam(log.parameters(), lr=0.01, 
+                               weight_decay=self.logreg_wd)
 
         best_val = 0
         test_acc = None
@@ -162,7 +164,7 @@ class EvalUnsupevised(object):
         preds = torch.argmax(logits, dim=1)
         acc = torch.sum(preds == test_lbls).float() / test_lbls.shape[0]
         
-        return acc
+        return acc.item()
     
     
     def get_embed(self, model, loader):

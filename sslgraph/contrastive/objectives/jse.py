@@ -5,7 +5,7 @@ import itertools
 import torch.nn as nn
 
 
-def JSE_loss(zs, zs_n=None, batch=None, sigma=None, neg_by_crpt=False):
+def JSE_loss(zs, zs_n=None, batch=None, sigma=None, neg_by_crpt=False, **kwargs):
     '''
     Args:
         zs: List of tensors of shape [n_views, batch_size, z_dim].

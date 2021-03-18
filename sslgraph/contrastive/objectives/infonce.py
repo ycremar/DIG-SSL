@@ -71,9 +71,9 @@ def infoNCE_local_intra_node(z1_n, z2_n, tau=0.5, norm=True):
     if norm:
         z1_n = F.normalize(z1_n)
         z2_n = F.normalize(z2_n)
-    exp = lambda x: torch.exp(x / self.tau)
-    refl_sim = exp(torch.mm(z1, z1.t()))
-    between_sim = exp(torch.mm(z1, z2.t()))
+    exp = lambda x: torch.exp(x / tau)
+    refl_sim = exp(torch.mm(z1_n, z1_n.t()))
+    between_sim = exp(torch.mm(z1_n, z2_n.t()))
     
     pos_sim = between_sim.diag()
     intra_sim = refl_sim.sum(1) - refl_sim.diag()
