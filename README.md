@@ -73,3 +73,5 @@ train(encoder, data_loader, optimizer, epochs, per_epoch_out=False)
     ***Return***: A generator that yields tuples of `(trained encoder, trained projection head)` at each epoch or after the last epoch. When only one of `graph_level` and `node_level` is `True`, the trained projection head only contains the corresponding head. When both are `True`, the trained projection head is a tuple of `(graph proj head, node proj head)`.
 
 ***You may also define a class using `Contrastive` and override the class methods (such as `train()`) as needed, so that the customized model can be used with the evaluation tools. Follow the examples for implementing [`GRACE`](sslgraph/contrastive/model/grace.py), [`InfoGraph`](sslgraph/contrastive/model/infograph.py), [`GraphCL`](sslgraph/contrastive/model/graphcl.py), and [`MVGRL`](sslgraph/contrastive/model/mvgrl.py).***
+
+*If you have any questions, please submit a new issue or contact us: ethanycx@tamu.edu.*
