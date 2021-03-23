@@ -2,6 +2,8 @@
 
 ## Overview
 
+<img src="./sslgraph_overview.pdf" width="800">
+
 The sslgraph package is a collection of benchmark datasets, data interfaces, evaluation tasks, and state-of-the-art algorithms for graph self-supervised learning. We aims to provide a *unified and highly customizable framework* for implementing graph self-supervised learning methods, *standardized datasets*, and *unified performance evaluation* for academic researchers interested in graph self-supervised learning. We cover the following three tasks:
 
 1. **Unsupervised graph-level representation learning**, to learn graph-level representations on unlabeled graph dataset, evaluated by 10-fold linear classification with SVC or logistic regression;
