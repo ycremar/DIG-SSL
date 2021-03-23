@@ -78,4 +78,17 @@ train(encoder, data_loader, optimizer, epochs, per_epoch_out=False)
 
 ***You may also define a class using `Contrastive` and override the class methods (such as `train()`) as needed, so that the customized model can be used with the evaluation tools. Follow the examples for implementing [`GRACE`](sslgraph/contrastive/model/grace.py), [`InfoGraph`](sslgraph/contrastive/model/infograph.py), [`GraphCL`](sslgraph/contrastive/model/graphcl.py), and [`MVGRL`](sslgraph/contrastive/model/mvgrl.py).***
 
-*If you have any questions, please submit a new issue or contact us: ethanycx@tamu.edu.*
+
+## Citation
+If you find our library useful, please consider cite our work below.
+```
+@article{xie2021self,
+  title={Self-Supervised Learning of Graph Neural Networks: A Unified Review},
+  author={Xie, Yaochen and Xu, Zhao and Wang, Zhengyang and Ji, Shuiwang},
+  journal={arXiv preprint arXiv:2102.10757},
+  year={2021}
+}
+```
+
+## Contact
+*If you have any questions, please submit an issue or contact us at ethanycx@tamu.edu, sji@tamu.edu*
