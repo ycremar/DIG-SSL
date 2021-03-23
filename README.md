@@ -91,4 +91,4 @@ If you find our library useful, please consider cite our work below.
 ```
 
 ## Contact
-*If you have any questions, please submit an issue or contact us at ethanycx@tamu.edu, sji@tamu.edu*
+*If you have any questions, please submit an issue or contact us at ethanycx@tamu.edu and sji@tamu.edu.*
